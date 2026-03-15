@@ -1,0 +1,10 @@
+# interpretation_profiles/minimal.yaml
+#
+# Minimal fallback profile.
+# Passes all prefixes through unchanged — every population prefix becomes its
+# own macro-region. No ethnicity-specific groupings or labels.
+# Useful for targets where no regional profile exists yet.
+
+prefix_to_region: {}
+region_to_macro: {}
+macro_to_label: {}

@@ -1,0 +1,33 @@
+[project]
+name = "g25_automation"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "playwright>=1.40",
+    "pydantic>=2",
+    "pandas>=2",
+    "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio"]
+
+[project.scripts]
+g25-bootstrap   = "scripts.bootstrap:main"
+g25-preprocess  = "scripts.cli:cmd_preprocess"
+g25-build-pool  = "scripts.cli:cmd_build_pool"
+g25-run         = "scripts.cli:cmd_run"
+g25-full-run      = "scripts.cli:cmd_full_run"
+g25-full-run-user = "scripts.cli:cmd_full_run_user"
+g25-dual-run      = "scripts.cli:cmd_dual_run"
+g25-make-report   = "scripts.make_report:cmd_make_report"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["preprocessing*", "engine*", "optimizer*", "orchestration*", "scripts*", "interpretation*", "report*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

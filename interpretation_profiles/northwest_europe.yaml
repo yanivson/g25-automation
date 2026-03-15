@@ -1,0 +1,51 @@
+# interpretation_profiles/northwest_europe.yaml
+#
+# Profile for targets with Northwestern European ancestry.
+# Covers British Isles, Scandinavian, Germanic, and adjacent Western European proxies.
+
+prefix_to_region:
+  England:      Northwestern Europe
+  Ireland:      Northwestern Europe
+  Scotland:     Northwestern Europe
+  Wales:        Northwestern Europe
+  Iceland:      Northwestern Europe
+  Scandinavia:  Northwestern Europe
+  Denmark:      Northwestern Europe
+  Sweden:       Northwestern Europe
+  Norway:       Northwestern Europe
+  Netherlands:  Western Europe
+  Belgium:      Western Europe
+  France:       Western Europe
+  Germany:      Central Europe
+  Austria:      Central Europe
+  Switzerland:  Central Europe
+  Czech:        Central Europe
+  Poland:       Central Europe
+  Hungary:      Central Europe
+  Spain:        Southern Europe
+  Italy:        Southern Europe
+  Portugal:     Southern Europe
+  Greece:       Southeastern Europe
+  Croatia:      Southeastern Europe
+  Serbia:       Southeastern Europe
+  Romania:      Southeastern Europe
+  Bulgaria:     Southeastern Europe
+  Turkey:       Anatolia
+  Israel:       Levant
+
+region_to_macro:
+  Northwestern Europe:  Northwestern Europe
+  Western Europe:       Western Europe
+  Central Europe:       Central Europe
+  Southern Europe:      Southern Europe
+  Southeastern Europe:  Southeastern Europe
+  Anatolia:             Near East
+  Levant:               Near East
+
+macro_to_label:
+  Northwestern Europe:  Northwestern European ancestry
+  Western Europe:       Western European ancestry
+  Central Europe:       Central European ancestry
+  Southern Europe:      Southern European ancestry
+  Southeastern Europe:  Southeastern European ancestry
+  Near East:            Near Eastern ancestry

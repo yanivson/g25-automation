@@ -1,0 +1,58 @@
+# ── Python ──────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+pip-wheel-metadata/
+
+# ── Virtual environments ─────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Testing / coverage ───────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+*.coverage
+
+# ── IDE / OS ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Claude Code ──────────────────────────────────────────────────
+.claude/
+
+# ── Data — user files and generated outputs ──────────────────────
+# Raw source panels (large, not for version control)
+data/sources_raw/
+data/sources_filtered/
+data/sources_filtered_audit/
+data/sources_periods/
+data/candidate_pools/
+data/generated_panels/
+
+# Vahaduo engine clone (cloned by setup.py at install time)
+data/vahaduo_engine/
+
+# Generated cluster/representative files
+data/candidate_clusters/
+
+# User analysis data (personal, not committed)
+data/users/
+
+# Target files (personal genetic data)
+data/targets/
+
+# ── Run artifacts ─────────────────────────────────────────────────
+results/runs/

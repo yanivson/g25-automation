@@ -1,0 +1,139 @@
+vahaduo:
+  engine_path: data/vahaduo_engine
+  engine_repo: https://github.com/vahaduo/vahaduo
+  port: 0  # 0 = auto-select a free port at runtime
+
+data:
+  targets_dir: data/targets
+  sources_raw_dir: data/sources_raw
+  sources_filtered_dir: data/sources_filtered
+  sources_filtered_audit_dir: data/sources_filtered_audit
+  sources_periods_dir: data/sources_periods
+  candidate_pools_dir: data/candidate_pools
+  panels_dir: data/generated_panels
+
+preprocessing:
+  date_extraction:
+    # Supported strategies: regex_name | regex_name_extended | column | metadata_file | unknown
+    # regex_name:          extract year from population name string using regex_pattern
+    # regex_name_extended: classify period from name tokens (EBA, MBA, Roman, Byzantine, etc.)
+    # column:              read year from a named column in the source CSV
+    # metadata_file:       look up year from an external key→year CSV or JSON
+    # unknown:             treat all dates as unknown (rows go to undated bucket)
+    strategy: regex_name_extended
+    regex_pattern: null   # e.g. "_(\\d+)BCE" — used only with strategy: regex_name
+    column_name: null     # e.g. "date"
+    metadata_file: null   # e.g. "data/sources_raw/dates.csv"
+
+  region_filter:
+    allowed_keywords:
+      - North Africa
+      - Maghreb
+      - Middle East
+      - Levant
+      - Anatolia
+      - Turkey
+      - Europe
+    exclusion_keywords: []  # optional explicit blocklist applied after allow-list
+
+  periods:
+    bronze_age:      [-3300, -1200]
+    iron_age:        [-1200,  -500]
+    classical:       [ -500,   200]
+    late_antiquity:  [  200,   800]
+    medieval:        [  800,  1500]
+
+  candidate_reduction:
+    # Supported strategies: all | top_n | manual_list (optional)
+    # all:         pass the full period bucket through (default)
+    # top_n:       keep top N rows by a metadata column
+    # manual_list: keep only rows whose names appear in allowlist_file (optional feature)
+    strategy: all
+    top_n: null
+    allowlist_file: null   # path to a plain-text file with one population name per line
+
+  deduplication:
+    # Remove near-duplicate candidates whose G25 coordinates are within
+    # distance_threshold of each other (Euclidean over 25 dims).
+    # One representative per cluster is kept; all others are dropped.
+    # Note: minimum NN distance in this ancient corpus is ~0.0044, so
+    # thresholds below 0.005 produce zero merges. 0.010 is the calibrated
+    # baseline for this dataset (clusters ~50 populations with a neighbor).
+    enabled: true
+    distance_threshold: 0.010
+
+optimization:
+  max_iterations: 20          # hard stop regardless of convergence
+  stop_distance: 0.02         # stop early if distance drops to or below this
+  remove_percent_below: 5.0   # remove any population scoring below this %
+  strong_percent_at_or_above: 10.0  # populations at or above this % are always preserved
+  max_sources_per_panel: 20   # hard cap on panel size passed to engine
+  max_initial_panel_size: 40  # cap on how many populations to seed the first panel with
+  # Streak-based early stopping (0 = disabled)
+  stop_if_no_improvement_iterations: 3   # stop if best distance stalls for N iterations
+  stop_if_panel_repeats: 2               # stop if contributing panel set repeats N times
+  stop_if_all_new_candidates_zero: 2     # stop if new fills contribute 0% for N iterations
+  # Initial panel seeding strategy
+  initial_panel_strategy: nearest_by_distance  # alphabetical | nearest_by_distance
+  nearest_seed_count: 40                 # number of nearest candidates to seed the first panel
+
+results:
+  runs_dir: results/runs
+
+interpretation:
+  # prefix_to_region: maps the first underscore-token of a population name to a
+  # canonical region name. Unlisted prefixes pass through unchanged.
+  prefix_to_region:
+    Israel: Levant
+    Lebanon: Levant
+    Palestine: Levant
+    Jordan: Levant
+    Syria: Levant
+    Egypt: North Africa
+    Libya: North Africa
+    Tunisia: North Africa
+    Algeria: North Africa
+    Morocco: North Africa
+    Turkey: Anatolia
+    Greece: Southeastern Europe
+    Italy: Southern Europe
+    Spain: Southern Europe
+    France: Western Europe
+    Germany: Central Europe
+    England: Northwestern Europe
+    Ireland: Northwestern Europe
+    Scotland: Northwestern Europe
+    Scandinavia: Northwestern Europe
+    Croatia: Southeastern Europe
+    Serbia: Southeastern Europe
+    Romania: Southeastern Europe
+    Bulgaria: Southeastern Europe
+    Iraq: Mesopotamia
+    Iran: Iran
+    Saudi: Arabian Peninsula
+    Yemen: Arabian Peninsula
+
+  # region_to_macro: maps canonical region names to macro-regions.
+  # Unlisted regions pass through as their own macro-region.
+  region_to_macro:
+    Levant: Eastern Mediterranean
+    Anatolia: Eastern Mediterranean
+    Southeastern Europe: Eastern Mediterranean
+    North Africa: North Africa
+    Mesopotamia: Middle East
+    Iran: Middle East
+    Arabian Peninsula: Middle East
+    Southern Europe: Southern Europe
+    Western Europe: Western Europe
+    Central Europe: Central Europe
+    Northwestern Europe: Northwestern Europe
+
+  # macro_to_label: optional human-readable ancestry-family label per macro-region.
+  macro_to_label:
+    Eastern Mediterranean: East Mediterranean ancestry
+    North Africa: North African ancestry
+    Middle East: Middle Eastern ancestry
+    Southern Europe: Southern European ancestry
+    Western Europe: Western European ancestry
+    Central Europe: Central European ancestry
+    Northwestern Europe: Northwestern European ancestry

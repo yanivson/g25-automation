@@ -1,0 +1,63 @@
+# interpretation_profiles/eastmed_europe.yaml
+#
+# Profile for targets with East Mediterranean + Southern European ancestry.
+# Covers Levantine, Anatolian, Southeastern European, and North African proxies
+# as they appear in ancient DNA panels.
+
+prefix_to_region:
+  Israel:      Levant
+  Lebanon:     Levant
+  Palestine:   Levant
+  Jordan:      Levant
+  Syria:       Levant
+  Egypt:       North Africa
+  Libya:       North Africa
+  Tunisia:     North Africa
+  Algeria:     North Africa
+  Morocco:     North Africa
+  Turkey:      Anatolia
+  Greece:      Southeastern Europe
+  Croatia:     Southeastern Europe
+  Serbia:      Southeastern Europe
+  Romania:     Southeastern Europe
+  Bulgaria:    Southeastern Europe
+  Hungary:     Central Europe
+  Italy:       Southern Europe
+  Spain:       Southern Europe
+  Portugal:    Southern Europe
+  France:      Western Europe
+  Germany:     Central Europe
+  England:     Northwestern Europe
+  Ireland:     Northwestern Europe
+  Scotland:    Northwestern Europe
+  Iraq:        Mesopotamia
+  Iran:        Iran
+  Saudi:       Arabian Peninsula
+  Yemen:       Arabian Peninsula
+  Armenia:     Caucasus
+  Georgia:     Caucasus
+  Azerbaijan:  Caucasus
+
+region_to_macro:
+  Levant:               Eastern Mediterranean
+  Anatolia:             Eastern Mediterranean
+  Southeastern Europe:  Eastern Mediterranean
+  North Africa:         North Africa
+  Mesopotamia:          Middle East
+  Iran:                 Middle East
+  Arabian Peninsula:    Middle East
+  Caucasus:             Caucasus
+  Southern Europe:      Southern Europe
+  Western Europe:       Western Europe
+  Central Europe:       Central Europe
+  Northwestern Europe:  Northwestern Europe
+
+macro_to_label:
+  Eastern Mediterranean:  East Mediterranean ancestry
+  North Africa:           North African ancestry
+  Middle East:            Middle Eastern ancestry
+  Caucasus:               Caucasus ancestry
+  Southern Europe:        Southern European ancestry
+  Western Europe:         Western European ancestry
+  Central Europe:         Central European ancestry
+  Northwestern Europe:    Northwestern European ancestry
