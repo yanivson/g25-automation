@@ -23,11 +23,6 @@ All selectors and function names are taken verbatim from .inspection.json.
 
 from __future__ import annotations
 
-# ── Confirmed selectors and function names (from .inspection.json) ──────────
-SOURCE_SELECTOR = "#source"
-TARGET_SELECTOR = "#target"
-RESULT_SELECTOR = "#singleoutput"
-
 # The JS evaluated in one shot: set inputs, process, run, return raw HTML.
 # Returns the innerHTML of #singleoutput immediately after singleFMC(0) completes.
 _INJECT_RUN_AND_CAPTURE_JS = """
