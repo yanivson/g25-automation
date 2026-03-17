@@ -29,7 +29,7 @@ class OptimizationConfig:
     stop_if_panel_repeats: int = 0
     stop_if_all_new_candidates_zero: int = 0
     # Initial panel seeding strategy
-    initial_panel_strategy: str = "alphabetical"   # alphabetical | nearest_by_distance
+    initial_panel_strategy: str = "alphabetical"   # alphabetical | nearest_by_distance | stratified_macro
     nearest_seed_count: int | None = None           # overrides max_initial_panel_size when set
 
 

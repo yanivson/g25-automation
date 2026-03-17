@@ -74,8 +74,9 @@ optimization:
   stop_if_panel_repeats: 2               # stop if contributing panel set repeats N times
   stop_if_all_new_candidates_zero: 2     # stop if new fills contribute 0% for N iterations
   # Initial panel seeding strategy
-  initial_panel_strategy: nearest_by_distance  # alphabetical | nearest_by_distance
-  nearest_seed_count: 40                 # number of nearest candidates to seed the first panel
+  # Options: alphabetical | nearest_by_distance (legacy) | stratified_macro (default)
+  initial_panel_strategy: stratified_macro
+  nearest_seed_count: 40                 # used only by nearest_by_distance
 
 results:
   runs_dir: results/runs
@@ -108,6 +109,10 @@ interpretation:
     Serbia: Southeastern Europe
     Romania: Southeastern Europe
     Bulgaria: Southeastern Europe
+    Lithuania: Northeastern Europe
+    Latvia: Northeastern Europe
+    Estonia: Northeastern Europe
+    Poland: Northeastern Europe
     Iraq: Mesopotamia
     Iran: Iran
     Saudi: Arabian Peninsula
@@ -127,6 +132,7 @@ interpretation:
     Western Europe: Western Europe
     Central Europe: Central Europe
     Northwestern Europe: Northwestern Europe
+    Northeastern Europe: Northeastern Europe
 
   # macro_to_label: optional human-readable ancestry-family label per macro-region.
   macro_to_label:
@@ -137,3 +143,4 @@ interpretation:
     Western Europe: Western European ancestry
     Central Europe: Central European ancestry
     Northwestern Europe: Northwestern European ancestry
+    Northeastern Europe: Northeastern European ancestry

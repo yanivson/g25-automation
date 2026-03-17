@@ -363,6 +363,7 @@ def _run_interpretation_from_run_dir(
     display_name: str | None = None,
     identity_context: str | None = None,
     ydna_haplogroup: str | None = None,
+    config_path: Path | None = None,
 ) -> None:
     """
     Build evidence pack from run_dir artifacts and write interpretation artifacts.
@@ -370,9 +371,25 @@ def _run_interpretation_from_run_dir(
     Accepts optional user metadata that enriches the evidence pack when
     called from cmd_full_run_user (which has a loaded UserProfile).
     When called from cmd_full_run, all user metadata kwargs are None.
+
+    config_path, when provided, is used to:
+    - Populate profile with initial_panel_strategy when meta.json has profile=null
+    - Compute by_macro_region from by_country when generic_summary.json is absent
     """
     from interpretation.evidence_pack import build_evidence_from_run_dir
     from interpretation.interpreter import run_interpretation
+
+    # Derive profile fallback from config when the run did not use --profile.
+    profile_name_fallback: str | None = None
+    if config_path is not None and config_path.exists():
+        try:
+            import yaml  # type: ignore
+            _cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            profile_name_fallback = (_cfg.get("optimization") or {}).get(
+                "initial_panel_strategy"
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     print()
     evidence = build_evidence_from_run_dir(
@@ -381,6 +398,8 @@ def _run_interpretation_from_run_dir(
         display_name=display_name,
         identity_context=identity_context,
         ydna_haplogroup=ydna_haplogroup,
+        profile_name_fallback=profile_name_fallback,
+        config_path=config_path,
     )
     run_interpretation(run_dir, evidence)
 
@@ -801,27 +820,14 @@ def cmd_full_run_user(argv: list[str] | None = None) -> None:
     shutil.move(str(src_run_dir), str(dest_run_dir))
     print(f"\n[user-run] Run dir  -> {dest_run_dir}/")
 
-    # Re-write interpretation artifacts at the new location with user metadata
-    _run_interpretation_from_run_dir(
-        dest_run_dir,
-        user_id=p.user_id,
-        display_name=p.display_name,
-        identity_context=p.identity_context,
-        ydna_haplogroup=p.ydna_haplogroup,
-    )
-
-    # Promote artifact subset to analysis/latest/
-    copied = promote_to_latest(dest_run_dir, layout)
-    print(f"[user-run] latest/  -> {len(copied)} files promoted.")
-
     # Create interpretation stub if the user has not written one yet
     created = ensure_interpretation_stub(layout)
     if created:
         print(f"[user-run] Created  {layout.interpretation_txt}")
 
-    # ── Auto-run period diagnostics ──────────────────────────────────────────
-    # Discover period pool files from config; run one diagnostic pass per
-    # period without altering the overall best-fit result.
+    # ── Period diagnostics first — writes period_comparison.json to dest_run_dir ──
+    # Must run before interpretation so evidence_pack / final_report include
+    # period fields populated from the freshly written period_comparison.json.
     _run_period_diagnostics_user(
         config=config,
         config_path=config_path,
@@ -829,6 +835,32 @@ def cmd_full_run_user(argv: list[str] | None = None) -> None:
         dest_run_dir=dest_run_dir,
         latest_dir=layout.latest_dir,
     )
+
+    # ── Write interpretation artifacts after period diagnostics are complete ──
+    # period_comparison.json now exists in dest_run_dir, so evidence_pack and
+    # final_report will include period_best + period_comparison, profile, and
+    # by_macro_region derived from config.yaml mappings.
+    _run_interpretation_from_run_dir(
+        dest_run_dir,
+        user_id=p.user_id,
+        display_name=p.display_name,
+        identity_context=p.identity_context,
+        ydna_haplogroup=p.ydna_haplogroup,
+        config_path=config_path,
+    )
+
+    # Promote all artifacts (including period_comparison + fresh interpretation)
+    copied = promote_to_latest(dest_run_dir, layout)
+    print(f"[user-run] latest/  -> {len(copied)} files promoted.")
+
+    # ── Generate HTML report from the freshly-promoted analysis/latest/ ──────
+    try:
+        from report.make_report import make_report as _make_report
+        report_path = _make_report(user_dir)
+        print(f"[user-run] Report   -> {report_path}")
+        print(f"[user-run] Open in browser: file://{report_path.as_posix()}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[user-run] WARNING: Report generation failed: {exc}", file=sys.stderr)
 
     print(f"[user-run] Done.    {user_dir}/")
 

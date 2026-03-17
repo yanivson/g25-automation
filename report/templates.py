@@ -74,21 +74,119 @@ def _geo_color(label: str, fallback: list[str], idx: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Display-layer region label remapping
+# ---------------------------------------------------------------------------
+
+# Maps internal region keys (used for calculations) to historically appropriate
+# display labels. Applied only at render time — data keys are never modified.
+_DISPLAY_REGION_MAP: dict[str, str] = {
+    # All "Turkey_*" entries in G25 ancient panels are ancient Anatolian samples.
+    # "Anatolia" is the geographically and historically accurate display label.
+    "Turkey": "Anatolia",
+}
+
+
+def _display_region(region: str, sample_name: str = "") -> str:
+    """Return the display label for a region. Leaves unlisted regions unchanged."""
+    return _DISPLAY_REGION_MAP.get(region, region)
+
+
+# ---------------------------------------------------------------------------
+# Country list grouping helpers
+# ---------------------------------------------------------------------------
+
+def _geo_family(label: str) -> str:
+    """Classify a region label into a broad family for 'Other X' bucket labeling."""
+    low = label.lower()
+    _EUR = ["italy", "croatia", "greece", "spain", "portugal", "france", "german",
+            "austria", "czech", "slovak", "polish", "poland", "serbian", "serbia",
+            "albanian", "bulgarian", "romania", "hungarian", "balkan", "slavic",
+            "nordic", "scandina", "europe", "european", "latvia", "lithuania",
+            "estonia", "finland", "anatolia", "turkey", "turkish"]
+    _MED = ["israel", "levant", "lebanon", "syria", "jordan", "palestine",
+            "iraq", "iran", "arab", "egypt", "north africa", "maghreb",
+            "tunisia", "morocco", "algeria", "libya"]
+    if any(k in low for k in _EUR):
+        return "European"
+    if any(k in low for k in _MED):
+        return "Mediterranean"
+    return "Near Eastern"
+
+
+def _euro_subregion(label: str) -> str:
+    """Map a European region label to a sub-region name for display hints."""
+    low = label.lower()
+    if any(k in low for k in ["latvia", "lithuania", "estonia", "baltic"]):
+        return "Baltic"
+    if any(k in low for k in ["croatia", "serbian", "serbia", "albanian", "bulgarian",
+                               "romania", "romanian", "balkan", "greek", "greece",
+                               "bosnian", "macedon", "monten"]):
+        return "Balkan"
+    if any(k in low for k in ["polish", "poland", "czech", "slovak", "hungarian",
+                               "hungary", "central europe"]):
+        return "Central Europe"
+    if any(k in low for k in ["ukrainian", "belarus", "russian", "moldov",
+                               "eastern europe"]):
+        return "Eastern Europe"
+    return "Western Europe"
+
+
+def _group_small_countries(
+    entries: list[dict],
+    region_key: str = "region",
+    percent_key: str = "percent",
+    threshold: float = 2.0,
+) -> list[dict]:
+    """Group entries below *threshold*% (excluding the top contributor) into
+    geo-labeled 'Other X' buckets.
+
+    European buckets include sub-region hints: 'Other European (Baltic/Balkan)'.
+    At most 2 sub-region names are shown to avoid clutter.
+    """
+    if not entries:
+        return entries
+    top = entries[0]
+    rest = entries[1:]
+    main = [e for e in rest if float(e.get(percent_key, 0)) >= threshold]
+    small = [e for e in rest if float(e.get(percent_key, 0)) < threshold]
+    if not small:
+        return entries
+    buckets: dict[str, float] = {}
+    euro_subs: list[str] = []  # ordered, deduped sub-regions for European bucket
+    for e in small:
+        fam = _geo_family(str(e.get(region_key, "")))
+        buckets[fam] = buckets.get(fam, 0.0) + float(e.get(percent_key, 0))
+        if fam == "European":
+            sub = _euro_subregion(str(e.get(region_key, "")))
+            if sub not in euro_subs:
+                euro_subs.append(sub)
+    other_entries: list[dict] = []
+    for fam, pct in sorted(buckets.items(), key=lambda x: -x[1]):
+        if fam == "European" and euro_subs:
+            hint = "/".join(euro_subs[:2])
+            lbl = f"Other European ({hint})"
+        else:
+            lbl = f"Other {fam}"
+        other_entries.append({region_key: lbl, percent_key: round(pct, 2)})
+    return [top] + main + other_entries
+
+
+# ---------------------------------------------------------------------------
 # Sample name parser — extract country + period from G25 sample IDs
 # ---------------------------------------------------------------------------
 
 _PERIOD_KEYWORDS: list[tuple[list[str], str]] = [
     (["mlba", "_ba_", "bronze", "elba", "mba", "lba", "eba"], "Bronze Age"),
-    (["iron", "_ia_", "ironage"],                               "Iron Age"),
-    (["classical", "hellenistic", "archaic"],                   "Classical"),
-    (["imperial", "empire"],                                    "Roman Imperial"),
-    (["roman", "rome", "_rom"],                                 "Roman"),
-    (["byzantine", "byzan", "earlybyzan"],                      "Byzantine"),
-    (["medieval", "medieva"],                                   "Medieval"),
-    (["lateant", "late_ant", "lateanq"],                        "Late Antiquity"),
-    (["modern", "present", "contemporary"],                     "Modern"),
-    (["neolithic", "neo"],                                      "Neolithic"),
-    (["chalcolithic", "copper", "eneolithic"],                  "Chalcolithic"),
+    (["iron", "_ia_", "ironage", "phoeni"],                    "Iron Age"),
+    (["classical", "hellenistic", "archaic"],                  "Classical"),
+    (["imperial", "empire"],                                   "Roman Imperial"),
+    (["roman", "rome", "_rom"],                                "Roman"),
+    (["byzantine", "byzan", "earlybyzan"],                     "Byzantine"),
+    (["medieval", "medieva"],                                  "Medieval"),
+    (["lateant", "late_ant", "lateanq"],                       "Late Antiquity"),
+    (["modern", "present", "contemporary"],                    "Modern"),
+    (["neolithic", "neo", "ln", "bkg", "cordedware"],          "Neolithic"),
+    (["chalcolithic", "copper", "eneolithic"],                 "Chalcolithic"),
 ]
 
 
@@ -97,11 +195,24 @@ def _parse_sample_name(name: str) -> tuple[str, str]:
     parts = name.split("_")
     country = parts[0] if parts else name
 
-    name_lower = name.lower()
+    # Token-based matching to prevent false positives (e.g. "eba" inside "lebanon").
+    # Strip file-extension suffixes (.SG, .DG) so "Roman.SG" → "roman".
+    # Hybrid rule: keywords with len ≥ 5 use substring matching (so "byzan" matches
+    # inside "earlybyzantine"); shorter keywords use exact token equality only
+    # (so "eba" doesn't match "lebanon").
+    tokens = {t.lower().split(".")[0] for t in parts}
     period = ""
     for keywords, label in _PERIOD_KEYWORDS:
-        if any(k in name_lower for k in keywords):
-            period = label
+        for k in keywords:
+            kk = k.strip("_")
+            if len(kk) >= 5:
+                matched = any(kk in t for t in tokens)
+            else:
+                matched = kk in tokens
+            if matched:
+                period = label
+                break
+        if period:
             break
 
     return country, period
@@ -236,13 +347,15 @@ def _bar_rows(
     rows: list[str] = []
     for i, item in enumerate(items):
         raw_label = str(item[label_key])
-        label = _esc(raw_label)
+        # Bold the top contributor; dim entries < 5% (but never the top)
+        label_html = f'<strong>{_esc(raw_label)}</strong>' if i == 0 else _esc(raw_label)
         pct = float(item[pct_key])
         bar_w = pct / max_pct * 100
         color = _geo_color(raw_label, colors, i)
+        dim = ' style="opacity:0.68"' if (pct < 5.0 and i > 0) else ""
         rows.append(
-            f'<div class="bar-row">'
-            f'<span class="bar-label">{label}</span>'
+            f'<div class="bar-row"{dim}>'
+            f'<span class="bar-label">{label_html}</span>'
             f'<div class="bar-track">'
             f'<div class="bar-fill" data-w="{bar_w:.1f}%" style="background:{color}"></div>'
             f'</div>'
@@ -259,20 +372,29 @@ def _bar_rows(
 def _sample_cards(samples: list[dict]) -> str:
     if not samples:
         return '<p class="no-data">No sample data available.</p>'
+
+    # Separate main samples (≥1%) from minor contributors (<1%).
+    # Minor samples are omitted from cards for visual consistency with the
+    # main ancestry chart which also groups <1% entries.
+    main_samples = [s for s in samples if float(s["percent"]) >= 1.0]
+    minor_samples = [s for s in samples if float(s["percent"]) < 1.0]
+    display_samples = main_samples if main_samples else samples
+
     total = sum(float(s["percent"]) for s in samples) or 1
     cards: list[str] = []
-    for i, s in enumerate(samples):
+    for i, s in enumerate(display_samples):
         raw_name = s["name"]
         pct = float(s["percent"])
         bar_w = pct / total * 100
         country, period = _parse_sample_name(raw_name)
-        color = _geo_color(country, SAMPLE_COLORS, i)
+        country_label = _display_region(country, raw_name)
+        color = _geo_color(country_label, SAMPLE_COLORS, i)
 
         meta_parts: list[str] = []
-        if country:
+        if country_label:
             meta_parts.append(
                 f'<span class="sample-country" style="color:{color}">'
-                f'{_esc(country)}</span>'
+                f'{_esc(country_label)}</span>'
             )
         if period:
             meta_parts.append(f'<span class="sample-period">{_esc(period)}</span>')
@@ -300,7 +422,17 @@ def _sample_cards(samples: list[dict]) -> str:
         'they are reference populations, not direct ancestors.'
         '</p>'
     )
-    return note + '<div class="sample-list">' + "".join(cards) + "</div>"
+    minor_note = ""
+    if minor_samples:
+        minor_pct = sum(float(s["percent"]) for s in minor_samples)
+        n = len(minor_samples)
+        minor_note = (
+            f'<p class="sample-note" style="margin-top:0.4rem">'
+            f'{n} additional sample{"s" if n > 1 else ""} contribute '
+            f'{minor_pct:.1f}% combined (each &lt;1%).'
+            f'</p>'
+        )
+    return note + '<div class="sample-list">' + "".join(cards) + "</div>" + minor_note
 
 
 # ---------------------------------------------------------------------------
@@ -571,7 +703,6 @@ def _format_interpretation(text: str | None) -> str:
     in_para = False
     in_list = False
     first_done = False
-    meta_done = False
 
     _SEP_CHARS = set("━─═—=- ")
 
@@ -605,13 +736,6 @@ def _format_interpretation(text: str | None) -> str:
             close_para(); close_list()
             html.append(f'<h2 class="interp-doc-title">{_esc(stripped)}</h2>')
             continue
-
-        if not meta_done:
-            meta_done = True
-            if re.search(r"run|profile|generated", stripped, re.IGNORECASE):
-                close_para(); close_list()
-                html.append(f'<p class="interp-meta">{_esc(stripped)}</p>')
-                continue
 
         m = re.match(r"^(\d+)\.\s+(.+)$", stripped)
         if m and stripped == stripped.upper():
@@ -693,10 +817,9 @@ def _executive_summary(fr: dict, generic: dict | None) -> str:
     by_macro = fr.get("by_macro_region", [])
     by_country = fr.get("by_country", [])
 
-    if generic and generic.get("summary_lines"):
-        lines = [l for l in generic["summary_lines"] if "proxy" not in l.lower()]
-        if lines:
-            return " ".join(lines[:2])
+    # Always derive the summary from the current run's data.
+    # generic_summary.json can be stale (from a previous run) so it is intentionally
+    # ignored here.
 
     parts: list[str] = []
     if by_macro and len(by_macro) >= 2:
@@ -706,7 +829,10 @@ def _executive_summary(fr: dict, generic: dict | None) -> str:
             f"and {m1['percent']:.0f}% {m1['macro_region']} ancestry."
         )
     if by_country:
-        regions = ", ".join(f"{c['region']} ({c['percent']:.0f}%)" for c in by_country[:3])
+        regions = ", ".join(
+            f"{_display_region(c['region'])} ({c['percent']:.0f}%)"
+            for c in by_country[:3]
+        )
         parts.append(f"Strongest proxy affinity to {regions}.")
     if quality:
         parts.append(f"Genetic distance {dist:.6f} — {quality}.")
@@ -735,7 +861,7 @@ def render_report(
     run       = final_report.get("run", {})
     dist      = float(run.get("best_distance", 0))
     quality   = str(run.get("distance_quality", ""))
-    prof_name = _esc(str(run.get("profile", "")))
+    prof_name = _esc(run.get("profile") or "")
     run_id    = _esc(str(run.get("run_id", "")))
     stop_rsn  = _esc(str(run.get("stop_reason", "")))
     best_iter = run.get("best_iteration")
@@ -770,12 +896,18 @@ def render_report(
         chips.append(f'<span class="chip chip-period">&#8982;&nbsp;{_esc(str(best_period))}</span>')
 
     # ── Charts ───────────────────────────────────────────────────
+    # Apply display-layer label remapping, then collapse <1% entries.
+    # Internal by_country data (used for calculations) is never modified.
+    by_country_disp = [
+        {**c, "region": _display_region(c["region"])} for c in by_country
+    ]
+    by_country_display = _group_small_countries(by_country_disp)
     country_donut = _svg_donut(
-        by_country, "region", "percent", COUNTRY_COLORS,
+        by_country_display, "region", "percent", COUNTRY_COLORS,
         size=200, chart_id="country-donut",
         center_label="Ancestry\nDistribution",
     )
-    country_bars = _bar_rows(by_country, "region", "percent", COUNTRY_COLORS)
+    country_bars = _bar_rows(by_country_display, "region", "percent", COUNTRY_COLORS)
 
     macro_donut = ""
     if by_macro:
@@ -793,8 +925,8 @@ def render_report(
             f'<p class="hero-takeaway">Closest overall fit:&ensp;'
             f'{_esc(_m0)}&thinsp;+&thinsp;{_esc(_m1)}</p>'
         )
-    elif by_country:
-        _c0 = by_country[0]
+    elif by_country_disp:
+        _c0 = by_country_disp[0]
         hero_takeaway_html = (
             f'<p class="hero-takeaway">Dominant affinity:&ensp;'
             f'{_esc(str(_c0.get("region", "")))} '
@@ -818,8 +950,8 @@ def render_report(
 
     # ── Hero metric row ──────────────────────────────────────────
     _hero_metric_items: list[str] = []
-    if by_country:
-        _tc = by_country[0]
+    if by_country_disp:
+        _tc = by_country_disp[0]
         _tc_name = str(_tc.get("region", ""))
         _tc_pct  = float(_tc.get("percent", 0))
         _hero_metric_items.append(
@@ -885,24 +1017,12 @@ def render_report(
     # ── Macro region section ─────────────────────────────────────
     macro_section_html = ""
     if macro_donut:
-        macro_rows = "".join(
-            f'<div class="macro-row">'
-            f'<div><div class="macro-name">{_esc(str(m.get("macro_region", "")))}</div>'
-            f'<div class="macro-sub">{_esc(str(m.get("label", "")))}</div></div>'
-            f'<div class="macro-pct">{float(m.get("percent", 0)):.1f}%</div>'
-            f'</div>'
-            for m in by_macro
-        )
         macro_section_html = f"""
       <div class="sub-divider"></div>
-      <div class="two-col">
+      <div style="display:flex;justify-content:center">
         <div>
-          <div class="col-label">Macro Region</div>
+          <div class="col-label" style="text-align:center">Macro Region</div>
           {macro_donut}
-        </div>
-        <div>
-          <div class="col-label">Regional Breakdown</div>
-          <div class="macro-table" style="margin-top:0.5rem">{macro_rows}</div>
         </div>
       </div>"""
 
@@ -1016,6 +1136,7 @@ def render_report(
         <div class="section-header-left">
           <div class="section-icon icon-blue">&#9670;</div>
           <div>
+            <div class="section-eyebrow">Model-Level Summary</div>
             <div class="section-title">Ancestry Distribution</div>
             <div class="section-sub">by_country is the primary evidence &mdash; ancient populations as genetic proxies</div>
           </div>
@@ -1060,11 +1181,12 @@ def render_report(
     </section>
 
     <!-- ══ D. Sample-Level Proxies ══════════════════════════════ -->
-    <section id="samples" class="section collapsible-section">
+    <section id="samples" class="section collapsible-section section-divider-top">
       <div class="section-header">
         <div class="section-header-left">
           <div class="section-icon icon-teal">&#9652;</div>
           <div>
+            <div class="section-eyebrow">Raw Genetic Proxies</div>
             <div class="section-title">Sample-Level Proxies</div>
             <div class="section-sub">Top contributing reference populations &mdash; supporting detail below ancestry distribution</div>
           </div>

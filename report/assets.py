@@ -368,6 +368,15 @@ body::before {
 .icon-green { background: var(--green-dim); color: var(--green);  border: 1px solid rgba(34,197,147,0.22); }
 .icon-gray  { background: var(--bg-4);      color: var(--ink-3);  border: 1px solid var(--border-2); }
 
+.section-eyebrow {
+  font-family: var(--font-ui);
+  font-size: 0.60rem;
+  font-weight: 500;
+  color: var(--ink-3);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  margin-bottom: 0.3rem;
+}
 .section-title {
   font-family: var(--font-display);
   font-size: 0.95rem;
@@ -376,6 +385,10 @@ body::before {
   letter-spacing: 0.15px;
 }
 .section-sub { font-size: 0.72rem; color: var(--ink-3); margin-top: 1px; letter-spacing: 0.2px; }
+.section-divider-top {
+  border-top: 1px solid rgba(255,255,255,0.06);
+  margin-top: 2rem;
+}
 
 .collapsible-toggle {
   background: none;
@@ -799,16 +812,6 @@ body::before {
   flex-shrink: 0;
 }
 
-.interp-subsection {
-  font-family: var(--font-display);
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: var(--ink-2);
-  text-transform: uppercase;
-  letter-spacing: 1.8px;
-  margin: 0.85rem 0 0.35rem;
-}
-
 .interp-para {
   font-family: var(--font-serif);
   font-size: 0.97rem;
@@ -869,36 +872,6 @@ body::before {
 }
 
 /* ── Period chart ────────────────────────────────────────────── */
-.period-disclaimer {
-  background: var(--bg-3);
-  border: 1px solid var(--border);
-  border-left: 3px solid rgba(155,114,245,0.45);
-  border-radius: 10px;
-  padding: 0.85rem 1.1rem;
-  margin-bottom: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-.period-disclaimer p {
-  font-family: var(--font-ui);
-  font-size: 0.8rem;
-  color: var(--ink-3);
-  line-height: 1.5;
-  margin: 0;
-}
-
-.period-dynamic {
-  font-family: var(--font-ui);
-  font-size: 0.87rem;
-  color: var(--ink-2);
-  line-height: 1.7;
-  margin: 0.25rem 0 1.4rem;
-  padding-left: 0.9rem;
-  border-left: 2px solid rgba(155,114,245,0.28);
-}
-.period-dynamic strong { color: #b898ff; font-weight: 650; }
-
 .period-note {
   font-family: var(--font-ui);
   font-size: 0.76rem;
@@ -1293,7 +1266,7 @@ details[open] .appendix-summary::after { content: "collapse ▲"; }
   font-weight: 600;
   letter-spacing: 0.8px;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ink-3);
 }
 .hm-value {
   font-family: var(--font-display);
@@ -1303,7 +1276,7 @@ details[open] .appendix-summary::after { content: "collapse ▲"; }
 }
 .hm-pct {
   font-size: 0.78rem;
-  color: var(--muted);
+  color: var(--ink-3);
   font-weight: 400;
 }
 

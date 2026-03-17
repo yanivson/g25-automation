@@ -72,10 +72,6 @@ _POP_ROW_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Matches the Target name line in the header
-_TARGET_RE = re.compile(r"Target:\s*([^<\n]+?)(?:<br|$)", re.IGNORECASE)
-
-
 # ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------

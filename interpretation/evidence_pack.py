@@ -107,6 +107,52 @@ class EvidencePack:
 
 
 # ---------------------------------------------------------------------------
+# Macro-region helper — computes rollup from by_country + config.yaml
+# ---------------------------------------------------------------------------
+
+def _compute_macro_from_config(
+    by_country: list[dict],
+    config_path: Path,
+) -> list[dict]:
+    """
+    Derive by_macro_region from by_country using config.yaml mappings.
+
+    Uses interpretation.prefix_to_region → region_to_macro → macro_to_label.
+    Returns [] if config cannot be read or mappings are absent.
+    """
+    try:
+        import yaml  # type: ignore
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    interp           = raw.get("interpretation") or {}
+    prefix_to_region = interp.get("prefix_to_region") or {}
+    region_to_macro  = interp.get("region_to_macro")  or {}
+    macro_to_label   = interp.get("macro_to_label")   or {}
+
+    totals: dict[str, float] = {}
+    for entry in by_country:
+        prefix = str(entry.get("region", ""))
+        region = prefix_to_region.get(prefix, prefix)
+        macro  = region_to_macro.get(region, region)
+        totals[macro] = totals.get(macro, 0.0) + float(entry.get("percent", 0))
+
+    return sorted(
+        [
+            {
+                "macro_region": macro,
+                "percent":      round(pct, 2),
+                "label":        macro_to_label.get(macro, ""),
+            }
+            for macro, pct in totals.items()
+        ],
+        key=lambda d: d["percent"],
+        reverse=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Builder — pure function, no file I/O
 # ---------------------------------------------------------------------------
 
@@ -212,6 +258,8 @@ def build_evidence_from_run_dir(
     display_name: str | None = None,
     identity_context: str | None = None,
     ydna_haplogroup: str | None = None,
+    profile_name_fallback: str | None = None,
+    config_path: Path | None = None,
 ) -> EvidencePack:
     """
     Build an EvidencePack by reading run-directory artifact files.
@@ -233,11 +281,20 @@ def build_evidence_from_run_dir(
     meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
     agg = json.loads((run_dir / "aggregated_result.json").read_text(encoding="utf-8"))
 
+    # profile — use value from meta.json; fall back to caller-supplied strategy name.
+    resolved_profile: str | None = meta.get("profile") or profile_name_fallback
+
     by_macro_region: list[dict] = []
     generic_path = run_dir / "generic_summary.json"
     if generic_path.exists():
         generic = json.loads(generic_path.read_text(encoding="utf-8"))
         by_macro_region = generic.get("by_macro_region", [])
+
+    # If still empty (no generic_summary or it lacked the field), derive from
+    # by_country using config.yaml prefix → macro mappings.
+    if not by_macro_region and config_path is not None and config_path.exists():
+        by_country_tmp = agg.get("by_country", [])
+        by_macro_region = _compute_macro_from_config(by_country_tmp, config_path)
 
     period_comparison: list[dict] = []
     has_period = False
@@ -268,7 +325,7 @@ def build_evidence_from_run_dir(
         top_samples=agg.get("top_samples", []),
         by_macro_region=by_macro_region,
         period_comparison=period_comparison,
-        profile_name=meta.get("profile"),
+        profile_name=resolved_profile,
         user_id=user_id,
         display_name=display_name,
         identity_context=identity_context,
