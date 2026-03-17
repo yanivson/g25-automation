@@ -1253,7 +1253,7 @@ details[open] .appendix-summary::after { content: "collapse ▲"; }
   font-weight: 600;
   letter-spacing: 0.8px;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ink-3);
 }
 .hm-value {
   font-family: var(--font-display);
@@ -1263,7 +1263,7 @@ details[open] .appendix-summary::after { content: "collapse ▲"; }
 }
 .hm-pct {
   font-size: 0.78rem;
-  color: var(--muted);
+  color: var(--ink-3);
   font-weight: 400;
 }
 

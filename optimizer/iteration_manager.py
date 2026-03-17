@@ -123,8 +123,9 @@ def run_iterations(
     """
     # ── Initial setup ──────────────────────────────────────────────────────
     seed_count = config.nearest_seed_count or config.max_initial_panel_size
+    strategy = config.initial_panel_strategy
 
-    if config.initial_panel_strategy == "nearest_by_distance":
+    if strategy == "nearest_by_distance":
         target_coords = parse_target_coords(target_text)
         ranked_pool = rank_candidates_by_distance(target_coords, candidate_pool_df)
         # Write preselection artifact before iteration 1
@@ -137,16 +138,33 @@ def run_iterations(
         # Strip the distance column before passing to panel builder
         pool_for_panel = ranked_pool.drop(columns=["euclidean_distance"], errors="ignore")
         current_panel_df = build_initial_panel_df(pool_for_panel, config)
+
+    elif strategy == "stratified_macro":
+        from optimizer.seed_strategy import build_stratified_macro_pool
+        target_coords = parse_target_coords(target_text)
+        strategy_pool = build_stratified_macro_pool(candidate_pool_df, target_coords)
+        # Rank strategy pool by distance for deterministic refill ordering
+        ranked_strategy = rank_candidates_by_distance(target_coords, strategy_pool)
+        if artifact_dir is not None:
+            _write_preselection_artifact(artifact_dir, ranked_strategy)
+        # Candidate set is limited to the stratified pool; all pops seeded
+        state = MutationState(
+            candidate_pool_names=ranked_strategy["name"].tolist(),
+        )
+        current_panel_df = strategy_pool
+
     else:
+        # alphabetical (default/legacy)
         state = MutationState(
             candidate_pool_names=sorted(candidate_pool_df["name"].tolist()),
         )
         current_panel_df = build_initial_panel_df(candidate_pool_df, config)
 
+    effective_pool_size = len(state.candidate_pool_names)
     print(
         f"[iteration_manager] Starting with {len(current_panel_df)} populations "
-        f"(pool={len(candidate_pool_df)}, "
-        f"strategy={config.initial_panel_strategy}, "
+        f"(pool={effective_pool_size}, "
+        f"strategy={strategy}, "
         f"seed_cap={seed_count}, "
         f"max_panel={config.max_sources_per_panel})"
     )
