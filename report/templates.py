@@ -92,28 +92,83 @@ def _display_region(region: str, sample_name: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
-# Country list grouping helper
+# Country list grouping helpers
 # ---------------------------------------------------------------------------
+
+def _geo_family(label: str) -> str:
+    """Classify a region label into a broad family for 'Other X' bucket labeling."""
+    low = label.lower()
+    _EUR = ["italy", "croatia", "greece", "spain", "portugal", "france", "german",
+            "austria", "czech", "slovak", "polish", "poland", "serbian", "serbia",
+            "albanian", "bulgarian", "romania", "hungarian", "balkan", "slavic",
+            "nordic", "scandina", "europe", "european", "latvia", "lithuania",
+            "estonia", "finland", "anatolia", "turkey", "turkish"]
+    _MED = ["israel", "levant", "lebanon", "syria", "jordan", "palestine",
+            "iraq", "iran", "arab", "egypt", "north africa", "maghreb",
+            "tunisia", "morocco", "algeria", "libya"]
+    if any(k in low for k in _EUR):
+        return "European"
+    if any(k in low for k in _MED):
+        return "Mediterranean"
+    return "Near Eastern"
+
+
+def _euro_subregion(label: str) -> str:
+    """Map a European region label to a sub-region name for display hints."""
+    low = label.lower()
+    if any(k in low for k in ["latvia", "lithuania", "estonia", "baltic"]):
+        return "Baltic"
+    if any(k in low for k in ["croatia", "serbian", "serbia", "albanian", "bulgarian",
+                               "romania", "romanian", "balkan", "greek", "greece",
+                               "bosnian", "macedon", "monten"]):
+        return "Balkan"
+    if any(k in low for k in ["polish", "poland", "czech", "slovak", "hungarian",
+                               "hungary", "central europe"]):
+        return "Central Europe"
+    if any(k in low for k in ["ukrainian", "belarus", "russian", "moldov",
+                               "eastern europe"]):
+        return "Eastern Europe"
+    return "Western Europe"
+
 
 def _group_small_countries(
     entries: list[dict],
     region_key: str = "region",
     percent_key: str = "percent",
-    threshold: float = 1.0,
+    threshold: float = 2.0,
 ) -> list[dict]:
-    """Collapse entries below *threshold* percent into a single 'Other (<1%)' entry.
+    """Group entries below *threshold*% (excluding the top contributor) into
+    geo-labeled 'Other X' buckets.
 
-    The 'Other' entry is appended at the end. Entries at or above the threshold
-    are returned in their original order.  Returns the original list unchanged if
-    no entries fall below the threshold.
+    European buckets include sub-region hints: 'Other European (Baltic/Balkan)'.
+    At most 2 sub-region names are shown to avoid clutter.
     """
-    main = [e for e in entries if float(e.get(percent_key, 0)) >= threshold]
-    small = [e for e in entries if float(e.get(percent_key, 0)) < threshold]
+    if not entries:
+        return entries
+    top = entries[0]
+    rest = entries[1:]
+    main = [e for e in rest if float(e.get(percent_key, 0)) >= threshold]
+    small = [e for e in rest if float(e.get(percent_key, 0)) < threshold]
     if not small:
         return entries
-    other_pct = sum(float(e.get(percent_key, 0)) for e in small)
-    other_entry = {region_key: f"Other (<1%)", percent_key: round(other_pct, 2)}
-    return main + [other_entry]
+    buckets: dict[str, float] = {}
+    euro_subs: list[str] = []  # ordered, deduped sub-regions for European bucket
+    for e in small:
+        fam = _geo_family(str(e.get(region_key, "")))
+        buckets[fam] = buckets.get(fam, 0.0) + float(e.get(percent_key, 0))
+        if fam == "European":
+            sub = _euro_subregion(str(e.get(region_key, "")))
+            if sub not in euro_subs:
+                euro_subs.append(sub)
+    other_entries: list[dict] = []
+    for fam, pct in sorted(buckets.items(), key=lambda x: -x[1]):
+        if fam == "European" and euro_subs:
+            hint = "/".join(euro_subs[:2])
+            lbl = f"Other European ({hint})"
+        else:
+            lbl = f"Other {fam}"
+        other_entries.append({region_key: lbl, percent_key: round(pct, 2)})
+    return [top] + main + other_entries
 
 
 # ---------------------------------------------------------------------------
@@ -292,13 +347,15 @@ def _bar_rows(
     rows: list[str] = []
     for i, item in enumerate(items):
         raw_label = str(item[label_key])
-        label = _esc(raw_label)
+        # Bold the top contributor; dim entries < 5% (but never the top)
+        label_html = f'<strong>{_esc(raw_label)}</strong>' if i == 0 else _esc(raw_label)
         pct = float(item[pct_key])
         bar_w = pct / max_pct * 100
         color = _geo_color(raw_label, colors, i)
+        dim = ' style="opacity:0.68"' if (pct < 5.0 and i > 0) else ""
         rows.append(
-            f'<div class="bar-row">'
-            f'<span class="bar-label">{label}</span>'
+            f'<div class="bar-row"{dim}>'
+            f'<span class="bar-label">{label_html}</span>'
             f'<div class="bar-track">'
             f'<div class="bar-fill" data-w="{bar_w:.1f}%" style="background:{color}"></div>'
             f'</div>'
@@ -371,8 +428,8 @@ def _sample_cards(samples: list[dict]) -> str:
         n = len(minor_samples)
         minor_note = (
             f'<p class="sample-note" style="margin-top:0.4rem">'
-            f'{n} additional sample{"s" if n > 1 else ""} each contribute '
-            f'less than 1% ({minor_pct:.1f}% combined) and are omitted from this view.'
+            f'{n} additional sample{"s" if n > 1 else ""} contribute '
+            f'{minor_pct:.1f}% combined (each &lt;1%).'
             f'</p>'
         )
     return note + '<div class="sample-list">' + "".join(cards) + "</div>" + minor_note
@@ -1079,6 +1136,7 @@ def render_report(
         <div class="section-header-left">
           <div class="section-icon icon-blue">&#9670;</div>
           <div>
+            <div class="section-eyebrow">Model-Level Summary</div>
             <div class="section-title">Ancestry Distribution</div>
             <div class="section-sub">by_country is the primary evidence &mdash; ancient populations as genetic proxies</div>
           </div>
@@ -1123,11 +1181,12 @@ def render_report(
     </section>
 
     <!-- ══ D. Sample-Level Proxies ══════════════════════════════ -->
-    <section id="samples" class="section collapsible-section">
+    <section id="samples" class="section collapsible-section section-divider-top">
       <div class="section-header">
         <div class="section-header-left">
           <div class="section-icon icon-teal">&#9652;</div>
           <div>
+            <div class="section-eyebrow">Raw Genetic Proxies</div>
             <div class="section-title">Sample-Level Proxies</div>
             <div class="section-sub">Top contributing reference populations &mdash; supporting detail below ancestry distribution</div>
           </div>

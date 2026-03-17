@@ -368,6 +368,15 @@ body::before {
 .icon-green { background: var(--green-dim); color: var(--green);  border: 1px solid rgba(34,197,147,0.22); }
 .icon-gray  { background: var(--bg-4);      color: var(--ink-3);  border: 1px solid var(--border-2); }
 
+.section-eyebrow {
+  font-family: var(--font-ui);
+  font-size: 0.60rem;
+  font-weight: 500;
+  color: var(--ink-3);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  margin-bottom: 0.3rem;
+}
 .section-title {
   font-family: var(--font-display);
   font-size: 0.95rem;
@@ -376,6 +385,10 @@ body::before {
   letter-spacing: 0.15px;
 }
 .section-sub { font-size: 0.72rem; color: var(--ink-3); margin-top: 1px; letter-spacing: 0.2px; }
+.section-divider-top {
+  border-top: 1px solid rgba(255,255,255,0.06);
+  margin-top: 2rem;
+}
 
 .collapsible-toggle {
   background: none;
