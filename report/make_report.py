@@ -72,6 +72,45 @@ def _compute_by_macro(
 
 
 # ---------------------------------------------------------------------------
+# Analysis freshness + archiving
+# ---------------------------------------------------------------------------
+
+def _check_analysis_freshness(user_dir: Path, final_report_path: Path) -> None:
+    """
+    Warn to stderr if final_report.json is older than key input / config files.
+
+    Checks:
+      - <project_root>/config.yaml
+      - <user_dir>/input/target.csv
+
+    Prints a single warning if any watched file is newer than the analysis.
+    Does not raise — callers should still proceed to generate the report.
+    """
+    if not final_report_path.exists():
+        return
+
+    analysis_mtime = final_report_path.stat().st_mtime
+
+    watch: list[Path] = [
+        Path(__file__).parent.parent / "config.yaml",
+        user_dir / "input" / "target.csv",
+    ]
+
+    import datetime
+
+    for p in watch:
+        if p.exists() and p.stat().st_mtime > analysis_mtime:
+            delta = datetime.timedelta(seconds=int(p.stat().st_mtime - analysis_mtime))
+            print(
+                f"[make-report] WARNING: Analysis may be outdated — "
+                f"{p.name} is {delta} newer than final_report.json. "
+                "Run g25-full-run-user first.",
+                file=sys.stderr,
+            )
+            return  # one warning is enough
+
+
+# ---------------------------------------------------------------------------
 # I/O helpers
 # ---------------------------------------------------------------------------
 
@@ -183,9 +222,12 @@ def make_report(user_dir: Path | str, theme: str = "dark") -> Path:
     latest = user_dir / "analysis" / "latest"
     if not latest.is_dir():
         raise FileNotFoundError(
-            f"No analysis/latest/ found under {user_dir}. "
+            f"No analysis found at analysis/latest/. "
             "Run g25-full-run-user first."
         )
+
+    # Warn early if the analysis JSON looks older than key input/config files.
+    _check_analysis_freshness(user_dir, latest / "final_report.json")
 
     profile         = _load_json(user_dir / "input" / "profile.json")
     final_report    = _load_json(latest / "final_report.json")
@@ -212,10 +254,18 @@ def make_report(user_dir: Path | str, theme: str = "dark") -> Path:
         except Exception:
             pass
 
+    # Warn if run_id is absent — indicates an older pipeline version wrote the JSON.
+    _run_id = str(final_report.get("run", {}).get("run_id", ""))
+    if not _run_id:
+        print(
+            "[make-report] WARNING: final_report.json has no run_id — "
+            "re-run the pipeline to get a fully-tagged analysis.",
+            file=sys.stderr,
+        )
+
     # Discard interpretation if it was generated for a different run.
     # interpretation.txt must contain the current run_id somewhere in its text,
     # otherwise treat it as missing (show placeholder instead of stale content).
-    _run_id = str(final_report.get("run", {}).get("run_id", ""))
     if interpretation and _run_id and _run_id not in interpretation:
         interpretation = None
 

@@ -496,7 +496,8 @@ class TestCliWiring:
         captured_kwargs: list[dict] = []
 
         def fake_interp(run_dir, *, user_id=None, display_name=None,
-                        identity_context=None, ydna_haplogroup=None):
+                        identity_context=None, ydna_haplogroup=None,
+                        config_path=None):
             captured_kwargs.append({
                 "user_id": user_id,
                 "display_name": display_name,
