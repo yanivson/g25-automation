@@ -377,6 +377,23 @@ body::before {
   text-transform: uppercase;
   margin-bottom: 0.3rem;
 }
+.section-note {
+  font-size: 0.78rem;
+  color: var(--ink-3);
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  font-style: italic;
+}
+.collapse-hint {
+  display: none;
+  font-size: 0.72rem;
+  color: var(--ink-3);
+  font-style: italic;
+  margin-right: 0.5rem;
+  align-self: center;
+}
+.collapsible-section.collapsed .collapse-hint { display: block; }
 .section-title {
   font-family: var(--font-display);
   font-size: 0.95rem;

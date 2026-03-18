@@ -698,7 +698,8 @@ def _format_interpretation(text: str | None) -> str:
             "</div>"
         )
 
-    lines = text.splitlines()
+    # Strip metadata tags (e.g. "run_id: ...") before rendering
+    lines = [l for l in text.splitlines() if not l.startswith("run_id:")]
     html: list[str] = []
     in_para = False
     in_list = False
@@ -851,6 +852,7 @@ def render_report(
     period_data: dict | list | None,
     interpretation: str | None,
     theme: str = "dark",
+    ydna_interpretation: str | None = None,
 ) -> str:
     # ── User info ────────────────────────────────────────────────
     display_name = _esc(profile.get("display_name", "User"))
@@ -945,6 +947,7 @@ def render_report(
     )
     period_detail_html = _period_detail_block(period_data, best_period)
     interp_html        = _format_interpretation(interpretation)
+    ydna_html          = _format_interpretation(ydna_interpretation) if ydna_interpretation else None
     dist_badge   = _dist_badge(dist, quality)
     exec_summary = _executive_summary(final_report, generic_summary)
 
@@ -1039,8 +1042,9 @@ def render_report(
     _toc_entries = [
         _toc_link("overview",       "A", "Overview",       active=True),
         _toc_link("ancestry",       "B", "Ancestry"),
-        _toc_link("interpretation", "C", "Interpretation"),
+        _toc_link("interpretation", "C", "Ancestry Interp."),
         _toc_link("samples",        "D", "Samples"),
+        *([_toc_link("ydna",        "F", "Y-DNA Interp.")] if ydna_html else []),
         _toc_link("technical",      "E", "Technical"),
     ]
     toc_links = "\n        ".join(_toc_entries)
@@ -1083,8 +1087,9 @@ def render_report(
   <nav class="toc">
     {_toc_link("overview","A","Overview",True)}
     {_toc_link("ancestry","B","Ancestry")}
-    {_toc_link("interpretation","C","Interpretation")}
+    {_toc_link("interpretation","C","Ancestry Interp.")}
     {_toc_link("samples","D","Samples")}
+    {_toc_link("ydna","F","Y-DNA Interp.") if ydna_html else ""}
     {_toc_link("technical","E","Technical")}
   </nav>
 </div>
@@ -1156,6 +1161,7 @@ def render_report(
           </div>
         </div>
         {macro_section_html}
+        <p class="section-note">The distribution is centered on Eastern Mediterranean and Southern European populations, with secondary variation reflecting regional admixture.</p>
       </div>
     </section>
 
@@ -1165,11 +1171,12 @@ def render_report(
         <div class="section-header-left">
           <div class="section-icon icon-gold">&#128214;</div>
           <div>
-            <div class="section-title">Historical Interpretation</div>
-            <div class="section-sub">Narrative from interpretation.txt &mdash; ancient populations are genetic proxies only</div>
+            <div class="section-title">Ancestry Interpretation</div>
+            <div class="section-sub">Bronze Age &rarr; Roman &amp; Byzantine &rarr; Medieval &mdash; ancient populations are genetic proxies only</div>
           </div>
         </div>
         <div class="section-badge">C</div>
+        <div class="collapse-hint">Summary shown &mdash; expand for full historical interpretation</div>
         <button class="collapsible-toggle" aria-expanded="true"></button>
       </div>
       <div class="section-body">
@@ -1195,9 +1202,29 @@ def render_report(
         <button class="collapsible-toggle" aria-expanded="true"></button>
       </div>
       <div class="section-body">
+        <p class="section-note">These samples represent closest-fit ancient and historical proxies and should be interpreted as population approximations rather than direct ancestry.</p>
         {sample_html}
       </div>
     </section>
+
+    <!-- ══ F. Y-DNA (Paternal Line) ═════════════════════════════ -->
+    {"" if not ydna_html else f"""
+    <section id="ydna" class="section collapsible-section section-divider-top">
+      <div class="section-header">
+        <div class="section-header-left">
+          <div class="section-icon icon-gold">&#129516;</div>
+          <div>
+            <div class="section-title">Y&#8209;DNA Interpretation</div>
+            <div class="section-sub">Paternal lineage analysis &mdash; single line only, does not represent full ancestry</div>
+          </div>
+        </div>
+        <div class="section-badge">F</div>
+        <button class="collapsible-toggle" aria-expanded="true"></button>
+      </div>
+      <div class="section-body">
+        {ydna_html}
+      </div>
+    </section>"""}
 
     <!-- ══ E. Technical Appendix ════════════════════════════════ -->
     <section id="technical" class="section collapsible-section collapsed">

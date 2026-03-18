@@ -240,6 +240,9 @@ def make_report(user_dir: Path | str, theme: str = "dark") -> Path:
     interpretation = _load_text_opt(
         user_dir / "interpretation" / "interpretation.txt"
     )
+    ydna_interpretation = _load_text_opt(
+        user_dir / "interpretation" / "ydna.txt"
+    )
 
     # Inject initial_panel_strategy as profile when run has no profile field.
     _run = final_report.get("run", {})
@@ -287,6 +290,7 @@ def make_report(user_dir: Path | str, theme: str = "dark") -> Path:
         period_data=period_data,
         interpretation=interpretation,
         theme=theme,
+        ydna_interpretation=ydna_interpretation,
     )
 
     report_dir = user_dir / "report"
