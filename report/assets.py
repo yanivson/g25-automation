@@ -1385,6 +1385,80 @@ html[data-theme="light"] .theme-toggle-btn .icon-moon { display: inline; }
   padding-bottom: 1.2rem;
   border-bottom: 1px solid var(--border);
 }
+
+/* ── RTL overrides ──────────────────────────────────────── */
+[dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+[dir="rtl"] .page-layout {
+  flex-direction: row-reverse;
+}
+[dir="rtl"] .sidebar {
+  border-right: none;
+  border-left: 1px solid var(--border);
+  box-shadow: inset 1px 0 0 rgba(200,146,74,0.07);
+}
+[dir="rtl"] .toc-link {
+  border-left: none;
+  border-right: 3px solid transparent;
+  padding-left: 0.75rem;
+  padding-right: 0.9rem;
+}
+[dir="rtl"] .toc-link.active,
+[dir="rtl"] .toc-link:hover {
+  border-right-color: var(--gold);
+  border-left-color: transparent;
+}
+[dir="rtl"] .section-header {
+  flex-direction: row-reverse;
+}
+[dir="rtl"] .section-header-left {
+  flex-direction: row-reverse;
+}
+[dir="rtl"] .section-badge {
+  margin-right: 0;
+  margin-left: auto;
+}
+[dir="rtl"] .bar-row {
+  direction: rtl;
+}
+[dir="rtl"] .bar-label {
+  text-align: right;
+}
+[dir="rtl"] .hero-chips {
+  direction: rtl;
+}
+[dir="rtl"] .key-signal-card,
+[dir="rtl"] .period-signal-card {
+  direction: rtl;
+}
+[dir="rtl"] .ks-item {
+  text-align: right;
+}
+[dir="rtl"] .meta-grid {
+  direction: rtl;
+}
+[dir="rtl"] .meta-item {
+  text-align: right;
+}
+[dir="rtl"] .collapse-hint {
+  margin-right: 0;
+  margin-left: 0.5rem;
+}
+[dir="rtl"] .mobile-nav {
+  flex-direction: row-reverse;
+}
+/* Keep numeric data LTR even in RTL context */
+[dir="rtl"] .bar-pct,
+[dir="rtl"] .ks-pct,
+[dir="rtl"] .hm-value,
+[dir="rtl"] .dist-badge,
+[dir="rtl"] .meta-value.mono,
+[dir="rtl"] code {
+  direction: ltr;
+  unicode-bidi: embed;
+}
 """
 
 
