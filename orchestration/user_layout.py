@@ -145,6 +145,16 @@ def promote_to_latest(run_dir: Path, layout: UserLayout) -> list[str]:
     """
     dest = layout.latest_dir
     dest.mkdir(parents=True, exist_ok=True)
+
+    # Remove optional files from latest/ that are absent in the new run.
+    # Prevents stale artifacts (e.g. a generic_summary.json from a previous
+    # profile) from surviving into the current run's latest/ view.
+    for name in _LATEST_OPTIONAL:
+        if not (run_dir / name).exists():
+            stale = dest / name
+            if stale.exists():
+                stale.unlink()
+
     copied: list[str] = []
     for name in _LATEST_ALWAYS + _LATEST_OPTIONAL:
         src = run_dir / name

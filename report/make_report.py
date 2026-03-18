@@ -252,19 +252,6 @@ def make_report(user_dir: Path | str, theme: str = "light", lang: str = "en") ->
             user_dir / "interpretation" / "ydna.txt"
         )
 
-    # Inject initial_panel_strategy as profile when run has no profile field.
-    _run = final_report.get("run", {})
-    if not _run.get("profile"):
-        try:
-            import yaml  # type: ignore
-            _cfg_path = Path(__file__).parent.parent / "config.yaml"
-            _cfg = yaml.safe_load(_cfg_path.read_text(encoding="utf-8"))
-            _strategy = (_cfg.get("optimization") or {}).get("initial_panel_strategy", "")
-            if _strategy:
-                final_report = {**final_report, "run": {**_run, "profile": _strategy}}
-        except Exception:
-            pass
-
     # Warn if run_id is absent — indicates an older pipeline version wrote the JSON.
     _run_id = str(final_report.get("run", {}).get("run_id", ""))
     if not _run_id:

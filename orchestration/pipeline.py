@@ -46,6 +46,7 @@ from engine.vahaduo_bridge import VahaduoBridge
 from optimizer.aggregation import aggregate_by_prefix
 from optimizer.interpretation import InterpretationConfig, build_generic_summary
 from optimizer.iteration_manager import IterationSummary, run_iterations
+from optimizer.plausibility import PlausibilityConfig
 from optimizer.scoring import OptimizationConfig
 from preprocessing.loader import load_g25_file
 
@@ -64,6 +65,32 @@ class Config:
     optimization: OptimizationConfig
     profiles_dir: Path = field(default_factory=lambda: Path("interpretation_profiles"))
     raw: dict[str, Any] = field(default_factory=dict)
+
+
+def _load_plausibility_config(pcfg: dict) -> PlausibilityConfig:
+    """Build a PlausibilityConfig from the optimization.plausibility yaml sub-section."""
+    if not pcfg:
+        return PlausibilityConfig()
+    return PlausibilityConfig(
+        enabled=pcfg.get("enabled", True),
+        drift_weight=pcfg.get("drift_weight", 0.30),
+        coherence_max_regions=pcfg.get("coherence_max_regions", 5),
+        coherence_per_extra_region=pcfg.get("coherence_per_extra_region", 0.10),
+        coherence_min_percent=pcfg.get("coherence_min_percent", 3.0),
+        spread_dust_threshold=pcfg.get("spread_dust_threshold", 1.0),
+        spread_per_dust=pcfg.get("spread_per_dust", 0.02),
+        substitute_min_percent=pcfg.get("substitute_min_percent", 5.0),
+        substitute_per_outlier=pcfg.get("substitute_per_outlier", 0.10),
+        remedy_enabled=pcfg.get("remedy_enabled", True),
+        remedy_trigger_ratio=pcfg.get("remedy_trigger_ratio", 1.15),
+        remedy_drift_min_percent=pcfg.get("remedy_drift_min_percent", 10.0),
+        lone_substitute_enabled=pcfg.get("lone_substitute_enabled", True),
+        lone_substitute_threshold=pcfg.get("lone_substitute_threshold", 5.0),
+        lone_substitute_distance_tolerance=pcfg.get("lone_substitute_distance_tolerance", 0.001),
+        low_component_enabled=pcfg.get("low_component_enabled", True),
+        low_component_threshold=pcfg.get("low_component_threshold", 3.0),
+        low_component_distance_tolerance=pcfg.get("low_component_distance_tolerance", 0.001),
+    )
 
 
 def load_config(config_path: Path = Path("config.yaml")) -> Config:
@@ -87,6 +114,11 @@ def load_config(config_path: Path = Path("config.yaml")) -> Config:
             stop_if_all_new_candidates_zero=opt.get("stop_if_all_new_candidates_zero", 0),
             initial_panel_strategy=opt.get("initial_panel_strategy", "alphabetical"),
             nearest_seed_count=opt.get("nearest_seed_count"),
+            # Metadata mappings for coverage-aware seeding
+            prefix_to_region=raw.get("interpretation", {}).get("prefix_to_region", {}),
+            region_to_macro=raw.get("interpretation", {}).get("region_to_macro", {}),
+            # Plausibility constraints
+            plausibility=_load_plausibility_config(opt.get("plausibility", {})),
         ),
         profiles_dir=Path(
             raw.get("interpretation_profiles_dir", "interpretation_profiles")

@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from engine.result_parser import PopulationResult, RunResult
+from optimizer.plausibility import PlausibilityConfig
 
 
 @dataclass
@@ -31,6 +32,15 @@ class OptimizationConfig:
     # Initial panel seeding strategy
     initial_panel_strategy: str = "alphabetical"   # alphabetical | nearest_by_distance | stratified_macro
     nearest_seed_count: int | None = None           # overrides max_initial_panel_size when set
+    # Metadata mappings for coverage-aware seeding
+    # When populated, stratified_macro uses build_coverage_aware_pool instead of
+    # the legacy keyword-based build_stratified_macro_pool.
+    prefix_to_region: dict[str, str] = field(default_factory=dict)
+    region_to_macro: dict[str, str] = field(default_factory=dict)
+    # Plausibility constraints
+    # When enabled, a composite score replaces raw distance for best-record
+    # selection and (optionally) the stop condition.
+    plausibility: PlausibilityConfig = field(default_factory=PlausibilityConfig)
 
 
 @dataclass
@@ -106,18 +116,23 @@ def should_stop(
     no_improvement_streak: int = 0,
     panel_repeat_streak: int = 0,
     zero_new_candidates_streak: int = 0,
+    composite_score: float | None = None,
 ) -> tuple[bool, str]:
     """
     Check all stop conditions for the iteration loop.
 
     Conditions (checked in priority order):
-      1. distance <= stop_distance           — success threshold met
+      1. composite_score (or distance) <= stop_distance  — success threshold met
       2. panel_unchanged                     — converged, no change possible
       3. pool_exhausted                      — no more candidates available
       4. no_improvement_streak >= N          — best distance stalled for N iterations
       5. panel_repeat_streak >= N            — effective contributing panel unchanged N times
       6. zero_new_candidates_streak >= N     — new fills contributed 0% for N iterations
       7. iteration >= max_iterations         — hard limit reached
+
+    When plausibility is enabled and composite_score is provided, condition 1
+    uses composite_score instead of raw distance.  This means a fit that is
+    distance-good but penalty-heavy must achieve a lower raw distance to stop.
 
     Streak conditions (4–6) are disabled when the corresponding config threshold is 0.
 
@@ -141,14 +156,27 @@ def should_stop(
     zero_new_candidates_streak:
         Number of consecutive iterations where all newly added fill candidates
         returned 0% contribution.
+    composite_score:
+        If provided and plausibility is enabled, used instead of raw distance
+        for the stop-distance check.
 
     Returns
     -------
     tuple[bool, str]
         (should_stop, reason_string)
     """
-    if result.distance <= config.stop_distance:
-        return True, f"stop_distance reached ({result.distance:.8f} <= {config.stop_distance})"
+    use_composite = (
+        composite_score is not None
+        and config.plausibility.enabled
+    )
+    check_value = composite_score if use_composite else result.distance
+    score_label = "composite_score" if use_composite else "distance"
+
+    if check_value <= config.stop_distance:
+        return True, (
+            f"{score_label} reached "
+            f"({check_value:.8f} <= {config.stop_distance})"
+        )
     if panel_unchanged:
         return True, "panel converged — no change between iterations"
     if pool_exhausted:

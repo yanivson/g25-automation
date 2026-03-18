@@ -142,11 +142,8 @@ def _group_small_countries(
     percent_key: str = "percent",
     threshold: float = 2.0,
 ) -> list[dict]:
-    """Group entries below *threshold*% (excluding the top contributor) into
-    geo-labeled 'Other X' buckets.
-
-    European buckets include sub-region hints: 'Other European (Baltic/Balkan)'.
-    At most 2 sub-region names are shown to avoid clutter.
+    """Group entries below *threshold*% (excluding the top contributor) into a
+    single 'Minor residual components' bucket with a ``details`` list for tooltip display.
     """
     if not entries:
         return entries
@@ -156,24 +153,16 @@ def _group_small_countries(
     small = [e for e in rest if float(e.get(percent_key, 0)) < threshold]
     if not small:
         return entries
-    buckets: dict[str, float] = {}
-    euro_subs: list[str] = []  # ordered, deduped sub-regions for European bucket
-    for e in small:
-        fam = _geo_family(str(e.get(region_key, "")))
-        buckets[fam] = buckets.get(fam, 0.0) + float(e.get(percent_key, 0))
-        if fam == "European":
-            sub = _euro_subregion(str(e.get(region_key, "")))
-            if sub not in euro_subs:
-                euro_subs.append(sub)
-    other_entries: list[dict] = []
-    for fam, pct in sorted(buckets.items(), key=lambda x: -x[1]):
-        if fam == "European" and euro_subs:
-            hint = "/".join(euro_subs[:2])
-            lbl = f"Other European ({hint})"
-        else:
-            lbl = f"Other {fam}"
-        other_entries.append({region_key: lbl, percent_key: round(pct, 2)})
-    return [top] + main + other_entries
+    total_small = round(sum(float(e.get(percent_key, 0)) for e in small), 2)
+    minor_entry = {
+        region_key: "Minor residual components",
+        percent_key: total_small,
+        "details": [
+            {region_key: str(e.get(region_key, "")), percent_key: float(e.get(percent_key, 0))}
+            for e in small
+        ],
+    }
+    return [top] + main + [minor_entry]
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +345,14 @@ def _bar_rows(
         color_key = str(item.get("_color_key", raw_label))
         # Bold the top contributor; dim entries < 5% (but never the top)
         label_html = f'<strong>{_esc(raw_label)}</strong>' if i == 0 else _esc(raw_label)
+        # Inline breakdown for minor-residual bucket
+        details = item.get("details")
+        if details:
+            detail_str = "\u2002·\u2002".join(
+                f'{_esc(str(d.get(label_key, d.get("region", ""))))}\u202f{float(d.get(pct_key, d.get("percent", 0))):.1f}%'
+                for d in details
+            )
+            label_html += f'<br><span class="bar-detail">{detail_str}</span>'
         pct = float(item[pct_key])
         bar_w = pct / max_pct * 100
         color = _geo_color(color_key, colors, i)

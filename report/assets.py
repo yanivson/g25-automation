@@ -702,6 +702,17 @@ body::before {
   text-align: right;
 }
 
+/* Minor residual breakdown line */
+.bar-detail {
+  display: block;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  color: var(--ink-3);
+  opacity: 0.75;
+  letter-spacing: 0.01em;
+  margin-top: 0.1em;
+}
+
 /* Top result in bar lists gets stronger label weight */
 .bar-list .bar-row:first-child .bar-label {
   font-weight: 650;

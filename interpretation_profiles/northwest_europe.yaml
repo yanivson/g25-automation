@@ -4,34 +4,74 @@
 # Covers British Isles, Scandinavian, Germanic, and adjacent Western European proxies.
 
 prefix_to_region:
-  England:      Northwestern Europe
-  Ireland:      Northwestern Europe
-  Scotland:     Northwestern Europe
-  Wales:        Northwestern Europe
-  Iceland:      Northwestern Europe
-  Scandinavia:  Northwestern Europe
-  Denmark:      Northwestern Europe
-  Sweden:       Northwestern Europe
-  Norway:       Northwestern Europe
-  Netherlands:  Western Europe
-  Belgium:      Western Europe
-  France:       Western Europe
-  Germany:      Central Europe
-  Austria:      Central Europe
-  Switzerland:  Central Europe
-  Czech:        Central Europe
-  Poland:       Central Europe
-  Hungary:      Central Europe
-  Spain:        Southern Europe
-  Italy:        Southern Europe
-  Portugal:     Southern Europe
-  Greece:       Southeastern Europe
-  Croatia:      Southeastern Europe
-  Serbia:       Southeastern Europe
-  Romania:      Southeastern Europe
-  Bulgaria:     Southeastern Europe
-  Turkey:       Anatolia
-  Israel:       Levant
+  # Northwestern Europe
+  England:           Northwestern Europe
+  Britain:           Northwestern Europe
+  Scotland:          Northwestern Europe
+  Ireland:           Northwestern Europe
+  Wales:             Northwestern Europe
+  IsleOfMan:         Northwestern Europe
+  ChannelIslands:    Northwestern Europe
+  Iceland:           Northwestern Europe
+  Faroes:            Northwestern Europe
+  Scandinavia:       Northwestern Europe
+  Denmark:           Northwestern Europe
+  Sweden:            Northwestern Europe
+  Norway:            Northwestern Europe
+  # Western Europe
+  Netherlands:       Western Europe
+  Belgium:           Western Europe
+  France:            Western Europe
+  Luxembourg:        Western Europe
+  # Central Europe
+  Germany:           Central Europe
+  Austria:           Central Europe
+  Switzerland:       Central Europe
+  Czech:             Central Europe
+  Czechia:           Central Europe
+  Slovakia:          Central Europe
+  Poland:            Central Europe
+  Hungary:           Central Europe
+  # Southern Europe
+  Spain:             Southern Europe
+  Portugal:          Southern Europe
+  Italy:             Southern Europe
+  Ibiza:             Southern Europe
+  CanaryIslands:     Southern Europe
+  Gibraltar:         Southern Europe
+  # Southeastern Europe
+  Greece:            Southeastern Europe
+  Croatia:           Southeastern Europe
+  Serbia:            Southeastern Europe
+  Romania:           Southeastern Europe
+  Bulgaria:          Southeastern Europe
+  Albania:           Southeastern Europe
+  Bosnia:            Southeastern Europe
+  BosniaHerzegovina: Southeastern Europe
+  Macedonia:         Southeastern Europe
+  Slovenia:          Southeastern Europe
+  Montenegro:        Southeastern Europe
+  # Northeastern Europe
+  Lithuania:         Northeastern Europe
+  Latvia:            Northeastern Europe
+  Estonia:           Northeastern Europe
+  Finland:           Northeastern Europe
+  Russia:            Northeastern Europe
+  Ukraine:           Northeastern Europe
+  Moldova:           Northeastern Europe
+  # Near East
+  Turkey:            Anatolia
+  Israel:            Levant
+  Armenia:           Caucasus
+  Georgia:           Caucasus
+  Azerbaijan:        Caucasus
+  Iran:              Iran
+  # North Africa
+  Egypt:             North Africa
+  Morocco:           North Africa
+  Tunisia:           North Africa
+  Algeria:           North Africa
+  Sudan:             North Africa
 
 region_to_macro:
   Northwestern Europe:  Northwestern Europe
@@ -39,8 +79,13 @@ region_to_macro:
   Central Europe:       Central Europe
   Southern Europe:      Southern Europe
   Southeastern Europe:  Southeastern Europe
+  Northeastern Europe:  Northeastern Europe
   Anatolia:             Near East
   Levant:               Near East
+  Caucasus:             Near East
+  Iran:                 Near East
+  North Africa:         North Africa
+  Central Asia:         Central Asia
 
 macro_to_label:
   Northwestern Europe:  Northwestern European ancestry
@@ -48,4 +93,7 @@ macro_to_label:
   Central Europe:       Central European ancestry
   Southern Europe:      Southern European ancestry
   Southeastern Europe:  Southeastern European ancestry
+  Northeastern Europe:  Northeastern European ancestry
   Near East:            Near Eastern ancestry
+  North Africa:         North African ancestry
+  Central Asia:         Central Asian ancestry
