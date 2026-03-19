@@ -10,6 +10,7 @@ from .theme import (
     COUNTRY_COLORS, MACRO_COLORS, SAMPLE_COLORS, PERIOD_COLORS,
 )
 from .translations import get_t, translate_country, translate_macro, translate_period, translate_quality
+from .sample_enrichment import enrich_sample, has_enrichment
 
 # Module-level mutable used to pass read_more label into the button string
 # (set by _format_interpretation before the f-string that references it)
@@ -394,7 +395,10 @@ def _sample_cards(samples: list[dict], t: dict | None = None, lang: str = "en") 
         country_label = _display_region(country, raw_name)
         color = _geo_color(country_label, SAMPLE_COLORS, i)
         country_disp = translate_country(country_label, lang)
-        period_disp = translate_period(period, lang) if period else ""
+
+        # Enrich with historical metadata
+        enrichment = enrich_sample(raw_name)
+        period_disp = enrichment.get("period") or (translate_period(period, lang) if period else "")
 
         meta_parts: list[str] = []
         if country_disp:
@@ -409,8 +413,53 @@ def _sample_cards(samples: list[dict], t: dict | None = None, lang: str = "en") 
             if meta_parts else ""
         )
 
+        # Build expand button and detail panel if enrichment is available
+        if has_enrichment(enrichment):
+            expand_btn = (
+                f'<button class="sample-expand-btn" aria-expanded="false" aria-label="Show details">'
+                f'<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">'
+                f'<path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+                f'</svg></button>'
+            )
+            sdp_rows: list[str] = []
+            if enrichment.get("date_range"):
+                sdp_rows.append(
+                    f'<div class="sdp-row">'
+                    f'<span class="sdp-label">Period</span>'
+                    f'<span class="sdp-value">{_esc(enrichment.get("period",""))}'
+                    f'<span class="sdp-date">{_esc(enrichment["date_range"])}</span></span>'
+                    f'</div>'
+                )
+            if enrichment.get("area"):
+                sdp_rows.append(
+                    f'<div class="sdp-row">'
+                    f'<span class="sdp-label">Area</span>'
+                    f'<span class="sdp-value">{_esc(enrichment["area"])}</span>'
+                    f'</div>'
+                )
+            if enrichment.get("culture"):
+                sdp_rows.append(
+                    f'<div class="sdp-row">'
+                    f'<span class="sdp-label">Culture</span>'
+                    f'<span class="sdp-value">{_esc(enrichment["culture"])}</span>'
+                    f'</div>'
+                )
+            if enrichment.get("description"):
+                sdp_rows.append(
+                    f'<div class="sdp-desc">{_esc(enrichment["description"])}</div>'
+                )
+            detail_panel = (
+                f'<div class="sample-detail-panel">'
+                f'<div class="sdp-inner">{"".join(sdp_rows)}</div>'
+                f'</div>'
+            )
+        else:
+            expand_btn = ""
+            detail_panel = ""
+
         cards.append(
             f'<div class="sample-card">'
+            f'<div class="sample-card-main">'
             f'<div class="sample-rank" style="background:{color}">{i + 1}</div>'
             f'<div class="sample-body">'
             f'<div class="sample-name">{_esc(raw_name)}</div>'
@@ -419,7 +468,12 @@ def _sample_cards(samples: list[dict], t: dict | None = None, lang: str = "en") 
             f'<div class="sample-mini-fill" data-w="{bar_w:.1f}%"'
             f' style="background:{color};width:0"></div>'
             f'</div></div>'
+            f'<div class="sample-card-end">'
             f'<div class="sample-pct">{pct:.1f}%</div>'
+            f'{expand_btn}'
+            f'</div>'
+            f'</div>'
+            f'{detail_panel}'
             f'</div>'
         )
     _t = t or {}
