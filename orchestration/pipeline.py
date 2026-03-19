@@ -64,6 +64,7 @@ class Config:
     runs_dir: Path
     optimization: OptimizationConfig
     profiles_dir: Path = field(default_factory=lambda: Path("interpretation_profiles"))
+    user_profiles: dict[str, str] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
 
 
@@ -123,6 +124,7 @@ def load_config(config_path: Path = Path("config.yaml")) -> Config:
         profiles_dir=Path(
             raw.get("interpretation_profiles_dir", "interpretation_profiles")
         ),
+        user_profiles=raw.get("user_profiles") or {},
         raw=raw,
     )
 
@@ -165,10 +167,18 @@ def load_profile(
             f"Available profiles: {_list_profiles(profiles_dir)}"
         )
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    cf = raw.get("candidate_filter") or {}
     return InterpretationConfig(
         prefix_to_region=raw.get("prefix_to_region") or {},
         region_to_macro=raw.get("region_to_macro") or {},
         macro_to_label=raw.get("macro_to_label") or {},
+        allowed_macro_regions=cf.get("allowed_macro_regions") or [],
+        excluded_super_regions=cf.get("excluded_super_regions") or [],
+        excluded_regions=cf.get("excluded_regions") or [],
+        profile_label=raw.get("profile_label") or "",
+        use_standard_mode=raw.get("use_standard_mode", True),
+        apply_plausibility_constraints=raw.get("apply_plausibility_constraints", True),
+        apply_remedy_passes=raw.get("apply_remedy_passes", True),
     )
 
 
@@ -256,6 +266,7 @@ def _write_iterative_meta(
     summary: IterationSummary,
     interpretation: InterpretationConfig | None,
     profile_name: str | None,
+    profile_filter_summary: dict | None = None,
 ) -> None:
     meta = {
         "run_id": run_id,
@@ -272,6 +283,8 @@ def _write_iterative_meta(
         "exhausted_count": summary.exhausted_count,
         "final_panel_size": summary.final_panel_size,
         "profile": profile_name,   # null when no profile was used
+        "profile_label": interpretation.profile_label if interpretation else None,
+        "profile_filter": profile_filter_summary or {},
         "optimization": {
             "max_iterations": config.optimization.max_iterations,
             "stop_distance": config.optimization.stop_distance,
@@ -428,6 +441,74 @@ def run_iterative(
     if len(candidate_pool_df) == 0:
         raise ValueError(f"Candidate pool is empty: {candidate_pool_file}")
 
+    # ── Profile candidate filter (metadata-driven, applied before optimization) ──
+    # Uses canonical_macro_region and broad_super_region columns from
+    # sample_metadata.annotate_df() — no substring matching on sample names.
+    _profile_filter_summary: dict = {}
+    _needs_filter = (
+        interpretation is not None
+        and (
+            interpretation.allowed_macro_regions
+            or interpretation.excluded_super_regions
+            or interpretation.excluded_regions
+        )
+    )
+    if _needs_filter:
+        import pandas as _pd
+        from preprocessing.sample_metadata import annotate_df as _annotate_df
+        annotated = _annotate_df(
+            candidate_pool_df,
+            config.optimization.prefix_to_region,
+            config.optimization.region_to_macro,
+        )
+        pre_count = len(annotated)
+        mask = _pd.Series([True] * len(annotated), index=annotated.index)
+
+        # 1. Whitelist by canonical_macro_region
+        if interpretation.allowed_macro_regions:
+            allowed_set = set(interpretation.allowed_macro_regions)
+            mask &= annotated["canonical_macro_region"].isin(allowed_set)
+
+        # 2. Blacklist by broad_super_region (defense-in-depth)
+        if interpretation.excluded_super_regions:
+            excl_super = set(interpretation.excluded_super_regions)
+            mask &= ~annotated["broad_super_region"].isin(excl_super)
+
+        # 3. Blacklist by canonical_region (fine-grained exclusions)
+        if interpretation.excluded_regions:
+            excl_regions = set(interpretation.excluded_regions)
+            mask &= ~annotated["canonical_region"].isin(excl_regions)
+
+        candidate_pool_df = annotated[mask].copy()
+        post_count = len(candidate_pool_df)
+        excluded_macros = sorted(
+            m for m in annotated["canonical_macro_region"].unique()
+            if not mask[annotated["canonical_macro_region"] == m].any()
+        )
+        print(
+            f"[profile] candidate_filter: {pre_count} -> {post_count} rows"
+        )
+        if interpretation.allowed_macro_regions:
+            print(f"[profile]   allowed_macro_regions: {sorted(interpretation.allowed_macro_regions)}")
+        if interpretation.excluded_super_regions:
+            print(f"[profile]   excluded_super_regions: {sorted(interpretation.excluded_super_regions)}")
+        if interpretation.excluded_regions:
+            print(f"[profile]   excluded_regions: {sorted(interpretation.excluded_regions)}")
+        print(f"[profile]   macro_regions excluded: {excluded_macros}")
+        _profile_filter_summary = {
+            "candidate_count_before": pre_count,
+            "candidate_count_after":  post_count,
+            "allowed_macro_regions":  sorted(interpretation.allowed_macro_regions),
+            "excluded_super_regions": sorted(interpretation.excluded_super_regions),
+            "excluded_regions":       sorted(interpretation.excluded_regions),
+            "macro_regions_excluded": excluded_macros,
+        }
+        if post_count == 0:
+            raise ValueError(
+                f"Profile candidate_filter excluded ALL candidates. "
+                f"Allowed macro_regions: {sorted(interpretation.allowed_macro_regions)}"
+            )
+
     if artifact_dir is not None:
         run_id = artifact_dir.name
         run_dir = artifact_dir
@@ -461,6 +542,7 @@ def run_iterative(
         summary=summary,
         interpretation=interpretation,
         profile_name=profile_name,
+        profile_filter_summary=_profile_filter_summary,
     )
     return summary
 

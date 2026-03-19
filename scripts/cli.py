@@ -24,10 +24,12 @@ from pathlib import Path
 
 # All valid profile names. Free-form values are rejected.
 APPROVED_PROFILES: frozenset[str] = frozenset({
-    "stratified_macro",    # safe baseline — uses config.yaml mappings, no profile YAML
-    "eastmed_europe",      # East Mediterranean + Southern European targets
-    "northwest_europe",    # British Isles / Northwestern European targets
-    "minimal",             # minimal macro grouping
+    "stratified_macro",                              # safe baseline — uses config.yaml mappings
+    "eastmed_europe",                                # East Mediterranean + Southern European
+    "northwest_europe",                              # British Isles / NW European — Ryan
+    "jewish_eastmed_europe",                         # Jewish / EastMed + Europe (narrower)
+    "levant_anatolia_balkan_mediterranean_europe",   # Levant/Anatolia/Balkans/Med + Europe + corridor — Rivka, yaniv, Yigal
+    "minimal",                                       # minimal macro grouping
 })
 
 # Profiles that have a corresponding YAML file in interpretation_profiles/.
@@ -35,6 +37,8 @@ APPROVED_PROFILES: frozenset[str] = frozenset({
 _PROFILE_HAS_YAML: frozenset[str] = frozenset({
     "eastmed_europe",
     "northwest_europe",
+    "jewish_eastmed_europe",
+    "levant_anatolia_balkan_mediterranean_europe",
     "minimal",
 })
 
@@ -44,29 +48,44 @@ _SAFE_DEFAULT_PROFILE = "stratified_macro"
 _EASTMED_SANITY_THRESHOLD = 30.0
 
 
-def _resolve_profile(explicit: str | None) -> tuple[str, str]:
+def _resolve_profile(
+    explicit: str | None,
+    user_id: str | None = None,
+    user_profiles_map: dict[str, str] | None = None,
+) -> tuple[str, str]:
     """
     Resolve the run profile and return (profile_name, source).
 
-    source is one of: "explicit_cli", "default"
+    Resolution priority:
+      1. explicit CLI --profile flag  -> source = "explicit_cli"
+      2. user_profiles map in config  -> source = "user_config"
+      3. safe default (stratified_macro) -> source = "default"
 
-    Raises SystemExit if the explicit value is not in APPROVED_PROFILES.
+    Raises SystemExit if the resolved profile is not in APPROVED_PROFILES.
     """
-    if explicit is not None:
-        if explicit not in APPROVED_PROFILES:
+    def _validate(name: str, src: str) -> tuple[str, str]:
+        if name not in APPROVED_PROFILES:
             print(
-                f"[ERROR] Profile '{explicit}' is not in the approved list: "
+                f"[ERROR] Profile '{name}' (source: {src}) is not in the approved list: "
                 f"{sorted(APPROVED_PROFILES)}",
                 file=sys.stderr,
             )
             sys.exit(1)
-        return explicit, "explicit_cli"
+        return name, src
+
+    if explicit is not None:
+        return _validate(explicit, "explicit_cli")
+
+    if user_id and user_profiles_map and user_id in user_profiles_map:
+        return _validate(user_profiles_map[user_id], "user_config")
+
     return _SAFE_DEFAULT_PROFILE, "default"
 
 
-def _log_profile(profile_name: str, source: str) -> None:
+def _log_profile(profile_name: str, source: str, label: str = "") -> None:
     """Print a standardised profile-selection line at run start."""
-    print(f"[profile] selected={profile_name!r}  source={source}")
+    label_str = f"  label={label!r}" if label else ""
+    print(f"[profile] selected={profile_name!r}  source={source}{label_str}")
 
 
 def _sanity_check_plausibility(
@@ -947,10 +966,19 @@ def cmd_full_run_user(argv: list[str] | None = None) -> None:
     # Ensure user subdirectory tree exists before the run
     ensure_user_dirs(layout)
 
-    profile_name, profile_source = _resolve_profile(args.profile)
+    # Load config early to get user_profiles mapping for profile auto-selection.
+    config_path_early = Path(args.config) if args.config else Path("config.yaml")
+    _raw_early = _load_raw_config(config_path_early)
+    user_profiles_map = _raw_early.get("user_profiles") or {}
+
+    p = user_folder.profile
+    profile_name, profile_source = _resolve_profile(
+        args.profile,
+        user_id=p.user_id,
+        user_profiles_map=user_profiles_map,
+    )
 
     # Print user context header
-    p = user_folder.profile
     print(f"[user-run] User:    {p.user_id} ({p.display_name})")
     if p.identity_context:
         print(f"[user-run] Context: {p.identity_context}")

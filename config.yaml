@@ -3,6 +3,22 @@ vahaduo:
   engine_repo: https://github.com/vahaduo/vahaduo
   port: 0  # 0 = auto-select a free port at runtime
 
+# ---------------------------------------------------------------------------
+# User-to-profile mapping
+# ---------------------------------------------------------------------------
+# Maps user_id (data/users/<user_id>/) to an interpretation profile name.
+# If a user has an explicit mapping here, it is used automatically by
+# g25-full-run-user (source: "user_config").
+# If no mapping exists, stratified_macro is used (source: "default").
+# CLI --profile flag always overrides this map (source: "explicit_cli").
+#
+# All profile names must be in APPROVED_PROFILES (scripts/cli.py).
+user_profiles:
+  Ryan:   northwest_europe
+  Rivka:  levant_anatolia_balkan_mediterranean_europe
+  yaniv:  levant_anatolia_balkan_mediterranean_europe
+  Yigal:  levant_anatolia_balkan_mediterranean_europe
+
 data:
   targets_dir: data/targets
   sources_raw_dir: data/sources_raw

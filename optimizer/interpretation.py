@@ -36,10 +36,38 @@ class InterpretationConfig:
 
     All mappings default to empty dicts so the module works even when the
     config file has no interpretation section (fallthrough behaviour applies).
+
+    Candidate universe filtering (all metadata-driven, no name substring matching):
+        allowed_macro_regions:
+            Keep only candidates whose ``canonical_macro_region`` is in this list.
+            Empty list = no macro-region restriction (standard behaviour).
+        excluded_super_regions:
+            Additionally drop candidates whose ``broad_super_region`` is in this set.
+            Applied after allowed_macro_regions as defense-in-depth.
+        excluded_regions:
+            Additionally drop candidates whose ``canonical_region`` is in this set.
+
+    Profile metadata:
+        profile_label:  Human-readable one-line description shown in reports.
+        use_standard_mode:  Respect allowed_in_standard_mode column (default True).
+        apply_plausibility_constraints / apply_remedy_passes: passed through to
+            optimizer config (future use; current optimizer always honours
+            OptimizationConfig.plausibility.enabled).
     """
     prefix_to_region: dict[str, str] = field(default_factory=dict)
     region_to_macro: dict[str, str] = field(default_factory=dict)
     macro_to_label: dict[str, str] = field(default_factory=dict)
+
+    # Candidate universe filter
+    allowed_macro_regions: list[str] = field(default_factory=list)
+    excluded_super_regions: list[str] = field(default_factory=list)
+    excluded_regions: list[str] = field(default_factory=list)
+
+    # Profile metadata flags
+    profile_label: str = ""
+    use_standard_mode: bool = True
+    apply_plausibility_constraints: bool = True
+    apply_remedy_passes: bool = True
 
 
 # ---------------------------------------------------------------------------

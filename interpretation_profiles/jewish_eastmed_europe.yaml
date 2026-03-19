@@ -1,0 +1,138 @@
+# interpretation_profiles/jewish_eastmed_europe.yaml
+#
+# Profile: Jewish / East Mediterranean + European ancestry.
+# Intended for: Rivka, yaniv, Yigal
+#
+# Includes: Levant, Anatolia, all of Europe (all sub-regions).
+# Excludes: North Africa, Iran/Mesopotamia/Arabia (Middle East macro),
+#           Caucasus, Central Asia, East Asia, South Asia, Sub-Saharan Africa.
+#
+# Filtering is metadata-driven: uses canonical_macro_region and
+# broad_super_region columns from sample_metadata.annotate_df().
+# No substring matching on sample names.
+
+profile_label: "Jewish / East Mediterranean and European ancestry"
+
+use_standard_mode: true
+apply_plausibility_constraints: true
+apply_remedy_passes: true
+
+# ---------------------------------------------------------------------------
+# Candidate universe filter
+# ---------------------------------------------------------------------------
+candidate_filter:
+  # Primary whitelist by canonical_macro_region (from config.yaml region_to_macro).
+  # Eastern Mediterranean covers Levant (Israel, Lebanon, Palestine, Jordan, Syria)
+  # and Anatolia (Turkey).  All European sub-regions are included.
+  # Middle East (Iran, Iraq, Arabian Peninsula) is intentionally absent.
+  # Caucasus is intentionally absent (default: exclude).
+  allowed_macro_regions:
+    - Eastern Mediterranean   # Levant + Anatolia
+    - Southeastern Europe     # Greece, Croatia, Bulgaria, Serbia, etc.
+    - Southern Europe         # Italy, Spain, Portugal
+    - Western Europe          # Netherlands, France, Belgium, Luxembourg
+    - Central Europe          # Germany, Austria, Switzerland, Czech, Poland, etc.
+    - Northwestern Europe     # British Isles, Scandinavia, Iceland, Faroes
+    - Northeastern Europe     # Ukraine, Russia, Baltic states, Finland
+
+  # Defense-in-depth: remove any candidate whose broad_super_region is in this list,
+  # even if it somehow passed the macro-region filter above.
+  # NOTE: do NOT add "Middle East" here — broad_super_region for Eastern Mediterranean
+  # is also "Middle East", which would accidentally exclude Levant/Anatolia.
+  excluded_super_regions:
+    - North Africa
+    - Caucasus
+    - Central Asia
+    - East Asia
+    - South Asia
+    - Sub-Saharan Africa
+
+# ---------------------------------------------------------------------------
+# Interpretation mappings (for result labeling and macro-region aggregation)
+# ---------------------------------------------------------------------------
+prefix_to_region:
+  # Levant / East Mediterranean
+  Israel:            Levant
+  Lebanon:           Levant
+  Palestine:         Levant
+  Jordan:            Levant
+  Syria:             Levant
+  # Anatolia / Near East corridor (included)
+  Turkey:            Anatolia
+  Cyprus:            Anatolia
+  # Southeastern Europe
+  Greece:            Southeastern Europe
+  Croatia:           Southeastern Europe
+  Serbia:            Southeastern Europe
+  Romania:           Southeastern Europe
+  Bulgaria:          Southeastern Europe
+  Albania:           Southeastern Europe
+  Bosnia:            Southeastern Europe
+  BosniaHerzegovina: Southeastern Europe
+  Macedonia:         Southeastern Europe
+  Slovenia:          Southeastern Europe
+  Montenegro:        Southeastern Europe
+  # Southern Europe
+  Italy:             Southern Europe
+  Spain:             Southern Europe
+  Portugal:          Southern Europe
+  Ibiza:             Southern Europe
+  CanaryIslands:     Southern Europe
+  Gibraltar:         Southern Europe
+  # Western Europe
+  France:            Western Europe
+  Netherlands:       Western Europe
+  Belgium:           Western Europe
+  Luxembourg:        Western Europe
+  # Central Europe
+  Germany:           Central Europe
+  Austria:           Central Europe
+  Switzerland:       Central Europe
+  Czech:             Central Europe
+  Czechia:           Central Europe
+  Slovakia:          Central Europe
+  Poland:            Central Europe
+  Hungary:           Central Europe
+  # Northwestern Europe
+  England:           Northwestern Europe
+  Britain:           Northwestern Europe
+  Scotland:          Northwestern Europe
+  Ireland:           Northwestern Europe
+  Wales:             Northwestern Europe
+  IsleOfMan:         Northwestern Europe
+  ChannelIslands:    Northwestern Europe
+  Iceland:           Northwestern Europe
+  Faroes:            Northwestern Europe
+  Scandinavia:       Northwestern Europe
+  Denmark:           Northwestern Europe
+  Sweden:            Northwestern Europe
+  Norway:            Northwestern Europe
+  # Northeastern Europe
+  Lithuania:         Northeastern Europe
+  Latvia:            Northeastern Europe
+  Estonia:           Northeastern Europe
+  Finland:           Northeastern Europe
+  Russia:            Northeastern Europe
+  Ukraine:           Northeastern Europe
+  Moldova:           Northeastern Europe
+  Belarus:           Northeastern Europe
+  Crimea:            Northeastern Europe
+
+region_to_macro:
+  Levant:              Eastern Mediterranean
+  Anatolia:            Eastern Mediterranean
+  Southeastern Europe: Southeastern Europe
+  Southern Europe:     Southern Europe
+  Western Europe:      Western Europe
+  Central Europe:      Central Europe
+  Northwestern Europe: Northwestern Europe
+  Northeastern Europe: Northeastern Europe
+
+macro_to_label:
+  Eastern Mediterranean: East Mediterranean ancestry
+  Southeastern Europe:   Southeastern European ancestry
+  Southern Europe:       Southern European ancestry
+  Western Europe:        Western European ancestry
+  Central Europe:        Central European ancestry
+  Northwestern Europe:   Northwestern European ancestry
+  Northeastern Europe:   Northeastern European ancestry

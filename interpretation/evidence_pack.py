@@ -57,6 +57,8 @@ class EvidencePack:
     # Run identity
     run_id: str
     profile: str | None          # interpretation profile name, or null
+    profile_label: str | None    # human-readable profile description, or null
+    profile_filter: dict         # candidate filter summary (allowed_macro_regions, etc.)
 
     # Distance quality
     best_distance: float
@@ -90,6 +92,8 @@ class EvidencePack:
             "ydna_haplogroup":   self.ydna_haplogroup,
             "run_id":            self.run_id,
             "profile":           self.profile,
+            "profile_label":     self.profile_label,
+            "profile_filter":    self.profile_filter,
             "best_distance":     self.best_distance,
             "distance_quality":  self.distance_quality,
             "best_iteration":    self.best_iteration,
@@ -165,6 +169,8 @@ def build_evidence_pack(
     by_macro_region: list[dict] | None = None,
     period_comparison: list[dict] | None = None,
     profile_name: str | None = None,
+    profile_label: str | None = None,
+    profile_filter: dict | None = None,
     best_iteration: int | None = None,
     stop_reason: str | None = None,
     user_id: str | None = None,
@@ -234,6 +240,8 @@ def build_evidence_pack(
         ydna_haplogroup=ydna_haplogroup,
         run_id=run_id,
         profile=profile_name,
+        profile_label=profile_label,
+        profile_filter=profile_filter or {},
         best_distance=best_distance,
         distance_quality=classify_distance(best_distance),
         best_iteration=best_iteration,
@@ -283,6 +291,8 @@ def build_evidence_from_run_dir(
 
     # profile — use value from meta.json; fall back to caller-supplied strategy name.
     resolved_profile: str | None = meta.get("profile") or profile_name_fallback
+    resolved_profile_label: str | None = meta.get("profile_label")
+    resolved_profile_filter: dict = meta.get("profile_filter") or {}
 
     by_macro_region: list[dict] = []
     generic_path = run_dir / "generic_summary.json"
@@ -326,6 +336,8 @@ def build_evidence_from_run_dir(
         by_macro_region=by_macro_region,
         period_comparison=period_comparison,
         profile_name=resolved_profile,
+        profile_label=resolved_profile_label,
+        profile_filter=resolved_profile_filter,
         user_id=user_id,
         display_name=display_name,
         identity_context=identity_context,

@@ -1,8 +1,42 @@
 # interpretation_profiles/northwest_europe.yaml
 #
-# Profile for targets with Northwestern European ancestry.
-# Covers British Isles, Scandinavian, Germanic, and adjacent Western European proxies.
+# Profile: Northwest + adjacent Central-West European ancestry.
+# Intended for: Ryan
+#
+# Candidate universe is restricted to Northwestern Europe, Western Europe,
+# and Central Europe macro-regions only.  All other regions are excluded.
+#
+# Filtering is metadata-driven: uses canonical_macro_region and
+# broad_super_region columns from sample_metadata.annotate_df().
+# No substring matching on sample names.
 
+profile_label: "Northwest European ancestry focus"
+
+use_standard_mode: true
+apply_plausibility_constraints: true
+apply_remedy_passes: true
+
+# ---------------------------------------------------------------------------
+# Candidate universe filter
+# ---------------------------------------------------------------------------
+candidate_filter:
+  allowed_macro_regions:
+    - Northwestern Europe   # Scotland, England, Ireland, Wales, Iceland, Faroes, Scandinavia
+    - Western Europe        # Netherlands, France, Belgium, Luxembourg
+    - Central Europe        # Germany, Austria, Switzerland, Czech, Slovakia, Poland, Hungary
+
+  excluded_super_regions:
+    - Middle East           # defense-in-depth: catches any unrecognised Near Eastern pops
+    - North Africa
+    - Caucasus
+    - Central Asia
+    - East Asia
+    - South Asia
+    - Sub-Saharan Africa
+
+# ---------------------------------------------------------------------------
+# Interpretation mappings (for result labeling and macro-region aggregation)
+# ---------------------------------------------------------------------------
 prefix_to_region:
   # Northwestern Europe
   England:           Northwestern Europe
@@ -32,68 +66,13 @@ prefix_to_region:
   Slovakia:          Central Europe
   Poland:            Central Europe
   Hungary:           Central Europe
-  # Southern Europe
-  Spain:             Southern Europe
-  Portugal:          Southern Europe
-  Italy:             Southern Europe
-  Ibiza:             Southern Europe
-  CanaryIslands:     Southern Europe
-  Gibraltar:         Southern Europe
-  # Southeastern Europe
-  Greece:            Southeastern Europe
-  Croatia:           Southeastern Europe
-  Serbia:            Southeastern Europe
-  Romania:           Southeastern Europe
-  Bulgaria:          Southeastern Europe
-  Albania:           Southeastern Europe
-  Bosnia:            Southeastern Europe
-  BosniaHerzegovina: Southeastern Europe
-  Macedonia:         Southeastern Europe
-  Slovenia:          Southeastern Europe
-  Montenegro:        Southeastern Europe
-  # Northeastern Europe
-  Lithuania:         Northeastern Europe
-  Latvia:            Northeastern Europe
-  Estonia:           Northeastern Europe
-  Finland:           Northeastern Europe
-  Russia:            Northeastern Europe
-  Ukraine:           Northeastern Europe
-  Moldova:           Northeastern Europe
-  # Near East
-  Turkey:            Anatolia
-  Israel:            Levant
-  Armenia:           Caucasus
-  Georgia:           Caucasus
-  Azerbaijan:        Caucasus
-  Iran:              Iran
-  # North Africa
-  Egypt:             North Africa
-  Morocco:           North Africa
-  Tunisia:           North Africa
-  Algeria:           North Africa
-  Sudan:             North Africa
 
 region_to_macro:
   Northwestern Europe:  Northwestern Europe
   Western Europe:       Western Europe
   Central Europe:       Central Europe
-  Southern Europe:      Southern Europe
-  Southeastern Europe:  Southeastern Europe
-  Northeastern Europe:  Northeastern Europe
-  Anatolia:             Near East
-  Levant:               Near East
-  Caucasus:             Near East
-  Iran:                 Near East
-  North Africa:         North Africa
-  Central Asia:         Central Asia
 
 macro_to_label:
   Northwestern Europe:  Northwestern European ancestry
   Western Europe:       Western European ancestry
   Central Europe:       Central European ancestry
-  Southern Europe:      Southern European ancestry
-  Southeastern Europe:  Southeastern European ancestry
-  Northeastern Europe:  Northeastern European ancestry
-  Near East:            Near Eastern ancestry
-  North Africa:         North African ancestry
-  Central Asia:         Central Asian ancestry
