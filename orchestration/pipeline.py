@@ -46,6 +46,7 @@ from engine.vahaduo_bridge import VahaduoBridge
 from optimizer.aggregation import aggregate_by_prefix
 from optimizer.interpretation import InterpretationConfig, build_generic_summary
 from optimizer.iteration_manager import IterationSummary, run_iterations
+from optimizer.plausibility import PlausibilityConfig
 from optimizer.scoring import OptimizationConfig
 from preprocessing.loader import load_g25_file
 
@@ -63,7 +64,34 @@ class Config:
     runs_dir: Path
     optimization: OptimizationConfig
     profiles_dir: Path = field(default_factory=lambda: Path("interpretation_profiles"))
+    user_profiles: dict[str, str] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
+
+
+def _load_plausibility_config(pcfg: dict) -> PlausibilityConfig:
+    """Build a PlausibilityConfig from the optimization.plausibility yaml sub-section."""
+    if not pcfg:
+        return PlausibilityConfig()
+    return PlausibilityConfig(
+        enabled=pcfg.get("enabled", True),
+        drift_weight=pcfg.get("drift_weight", 0.30),
+        coherence_max_regions=pcfg.get("coherence_max_regions", 5),
+        coherence_per_extra_region=pcfg.get("coherence_per_extra_region", 0.10),
+        coherence_min_percent=pcfg.get("coherence_min_percent", 3.0),
+        spread_dust_threshold=pcfg.get("spread_dust_threshold", 1.0),
+        spread_per_dust=pcfg.get("spread_per_dust", 0.02),
+        substitute_min_percent=pcfg.get("substitute_min_percent", 5.0),
+        substitute_per_outlier=pcfg.get("substitute_per_outlier", 0.10),
+        remedy_enabled=pcfg.get("remedy_enabled", True),
+        remedy_trigger_ratio=pcfg.get("remedy_trigger_ratio", 1.15),
+        remedy_drift_min_percent=pcfg.get("remedy_drift_min_percent", 10.0),
+        lone_substitute_enabled=pcfg.get("lone_substitute_enabled", True),
+        lone_substitute_threshold=pcfg.get("lone_substitute_threshold", 5.0),
+        lone_substitute_distance_tolerance=pcfg.get("lone_substitute_distance_tolerance", 0.001),
+        low_component_enabled=pcfg.get("low_component_enabled", True),
+        low_component_threshold=pcfg.get("low_component_threshold", 3.0),
+        low_component_distance_tolerance=pcfg.get("low_component_distance_tolerance", 0.001),
+    )
 
 
 def load_config(config_path: Path = Path("config.yaml")) -> Config:
@@ -87,10 +115,16 @@ def load_config(config_path: Path = Path("config.yaml")) -> Config:
             stop_if_all_new_candidates_zero=opt.get("stop_if_all_new_candidates_zero", 0),
             initial_panel_strategy=opt.get("initial_panel_strategy", "alphabetical"),
             nearest_seed_count=opt.get("nearest_seed_count"),
+            # Metadata mappings for coverage-aware seeding
+            prefix_to_region=raw.get("interpretation", {}).get("prefix_to_region", {}),
+            region_to_macro=raw.get("interpretation", {}).get("region_to_macro", {}),
+            # Plausibility constraints
+            plausibility=_load_plausibility_config(opt.get("plausibility", {})),
         ),
         profiles_dir=Path(
             raw.get("interpretation_profiles_dir", "interpretation_profiles")
         ),
+        user_profiles=raw.get("user_profiles") or {},
         raw=raw,
     )
 
@@ -133,10 +167,18 @@ def load_profile(
             f"Available profiles: {_list_profiles(profiles_dir)}"
         )
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    cf = raw.get("candidate_filter") or {}
     return InterpretationConfig(
         prefix_to_region=raw.get("prefix_to_region") or {},
         region_to_macro=raw.get("region_to_macro") or {},
         macro_to_label=raw.get("macro_to_label") or {},
+        allowed_macro_regions=cf.get("allowed_macro_regions") or [],
+        excluded_super_regions=cf.get("excluded_super_regions") or [],
+        excluded_regions=cf.get("excluded_regions") or [],
+        profile_label=raw.get("profile_label") or "",
+        use_standard_mode=raw.get("use_standard_mode", True),
+        apply_plausibility_constraints=raw.get("apply_plausibility_constraints", True),
+        apply_remedy_passes=raw.get("apply_remedy_passes", True),
     )
 
 
@@ -224,6 +266,7 @@ def _write_iterative_meta(
     summary: IterationSummary,
     interpretation: InterpretationConfig | None,
     profile_name: str | None,
+    profile_filter_summary: dict | None = None,
 ) -> None:
     meta = {
         "run_id": run_id,
@@ -240,6 +283,8 @@ def _write_iterative_meta(
         "exhausted_count": summary.exhausted_count,
         "final_panel_size": summary.final_panel_size,
         "profile": profile_name,   # null when no profile was used
+        "profile_label": interpretation.profile_label if interpretation else None,
+        "profile_filter": profile_filter_summary or {},
         "optimization": {
             "max_iterations": config.optimization.max_iterations,
             "stop_distance": config.optimization.stop_distance,
@@ -396,6 +441,74 @@ def run_iterative(
     if len(candidate_pool_df) == 0:
         raise ValueError(f"Candidate pool is empty: {candidate_pool_file}")
 
+    # ── Profile candidate filter (metadata-driven, applied before optimization) ──
+    # Uses canonical_macro_region and broad_super_region columns from
+    # sample_metadata.annotate_df() — no substring matching on sample names.
+    _profile_filter_summary: dict = {}
+    _needs_filter = (
+        interpretation is not None
+        and (
+            interpretation.allowed_macro_regions
+            or interpretation.excluded_super_regions
+            or interpretation.excluded_regions
+        )
+    )
+    if _needs_filter:
+        import pandas as _pd
+        from preprocessing.sample_metadata import annotate_df as _annotate_df
+        annotated = _annotate_df(
+            candidate_pool_df,
+            config.optimization.prefix_to_region,
+            config.optimization.region_to_macro,
+        )
+        pre_count = len(annotated)
+        mask = _pd.Series([True] * len(annotated), index=annotated.index)
+
+        # 1. Whitelist by canonical_macro_region
+        if interpretation.allowed_macro_regions:
+            allowed_set = set(interpretation.allowed_macro_regions)
+            mask &= annotated["canonical_macro_region"].isin(allowed_set)
+
+        # 2. Blacklist by broad_super_region (defense-in-depth)
+        if interpretation.excluded_super_regions:
+            excl_super = set(interpretation.excluded_super_regions)
+            mask &= ~annotated["broad_super_region"].isin(excl_super)
+
+        # 3. Blacklist by canonical_region (fine-grained exclusions)
+        if interpretation.excluded_regions:
+            excl_regions = set(interpretation.excluded_regions)
+            mask &= ~annotated["canonical_region"].isin(excl_regions)
+
+        candidate_pool_df = annotated[mask].copy()
+        post_count = len(candidate_pool_df)
+        excluded_macros = sorted(
+            m for m in annotated["canonical_macro_region"].unique()
+            if not mask[annotated["canonical_macro_region"] == m].any()
+        )
+        print(
+            f"[profile] candidate_filter: {pre_count} -> {post_count} rows"
+        )
+        if interpretation.allowed_macro_regions:
+            print(f"[profile]   allowed_macro_regions: {sorted(interpretation.allowed_macro_regions)}")
+        if interpretation.excluded_super_regions:
+            print(f"[profile]   excluded_super_regions: {sorted(interpretation.excluded_super_regions)}")
+        if interpretation.excluded_regions:
+            print(f"[profile]   excluded_regions: {sorted(interpretation.excluded_regions)}")
+        print(f"[profile]   macro_regions excluded: {excluded_macros}")
+        _profile_filter_summary = {
+            "candidate_count_before": pre_count,
+            "candidate_count_after":  post_count,
+            "allowed_macro_regions":  sorted(interpretation.allowed_macro_regions),
+            "excluded_super_regions": sorted(interpretation.excluded_super_regions),
+            "excluded_regions":       sorted(interpretation.excluded_regions),
+            "macro_regions_excluded": excluded_macros,
+        }
+        if post_count == 0:
+            raise ValueError(
+                f"Profile candidate_filter excluded ALL candidates. "
+                f"Allowed macro_regions: {sorted(interpretation.allowed_macro_regions)}"
+            )
+
     if artifact_dir is not None:
         run_id = artifact_dir.name
         run_dir = artifact_dir
@@ -429,6 +542,7 @@ def run_iterative(
         summary=summary,
         interpretation=interpretation,
         profile_name=profile_name,
+        profile_filter_summary=_profile_filter_summary,
     )
     return summary
 

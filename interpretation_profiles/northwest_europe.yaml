@@ -1,51 +1,78 @@
 # interpretation_profiles/northwest_europe.yaml
 #
-# Profile for targets with Northwestern European ancestry.
-# Covers British Isles, Scandinavian, Germanic, and adjacent Western European proxies.
+# Profile: Northwest + adjacent Central-West European ancestry.
+# Intended for: Ryan
+#
+# Candidate universe is restricted to Northwestern Europe, Western Europe,
+# and Central Europe macro-regions only.  All other regions are excluded.
+#
+# Filtering is metadata-driven: uses canonical_macro_region and
+# broad_super_region columns from sample_metadata.annotate_df().
+# No substring matching on sample names.
 
+profile_label: "Northwest European ancestry focus"
+
+use_standard_mode: true
+apply_plausibility_constraints: true
+apply_remedy_passes: true
+
+# ---------------------------------------------------------------------------
+# Candidate universe filter
+# ---------------------------------------------------------------------------
+candidate_filter:
+  allowed_macro_regions:
+    - Northwestern Europe   # Scotland, England, Ireland, Wales, Iceland, Faroes, Scandinavia
+    - Western Europe        # Netherlands, France, Belgium, Luxembourg
+    - Central Europe        # Germany, Austria, Switzerland, Czech, Slovakia, Poland, Hungary
+
+  excluded_super_regions:
+    - Middle East           # defense-in-depth: catches any unrecognised Near Eastern pops
+    - North Africa
+    - Caucasus
+    - Central Asia
+    - East Asia
+    - South Asia
+    - Sub-Saharan Africa
+
+# ---------------------------------------------------------------------------
+# Interpretation mappings (for result labeling and macro-region aggregation)
+# ---------------------------------------------------------------------------
 prefix_to_region:
-  England:      Northwestern Europe
-  Ireland:      Northwestern Europe
-  Scotland:     Northwestern Europe
-  Wales:        Northwestern Europe
-  Iceland:      Northwestern Europe
-  Scandinavia:  Northwestern Europe
-  Denmark:      Northwestern Europe
-  Sweden:       Northwestern Europe
-  Norway:       Northwestern Europe
-  Netherlands:  Western Europe
-  Belgium:      Western Europe
-  France:       Western Europe
-  Germany:      Central Europe
-  Austria:      Central Europe
-  Switzerland:  Central Europe
-  Czech:        Central Europe
-  Poland:       Central Europe
-  Hungary:      Central Europe
-  Spain:        Southern Europe
-  Italy:        Southern Europe
-  Portugal:     Southern Europe
-  Greece:       Southeastern Europe
-  Croatia:      Southeastern Europe
-  Serbia:       Southeastern Europe
-  Romania:      Southeastern Europe
-  Bulgaria:     Southeastern Europe
-  Turkey:       Anatolia
-  Israel:       Levant
+  # Northwestern Europe
+  England:           Northwestern Europe
+  Britain:           Northwestern Europe
+  Scotland:          Northwestern Europe
+  Ireland:           Northwestern Europe
+  Wales:             Northwestern Europe
+  IsleOfMan:         Northwestern Europe
+  ChannelIslands:    Northwestern Europe
+  Iceland:           Northwestern Europe
+  Faroes:            Northwestern Europe
+  Scandinavia:       Northwestern Europe
+  Denmark:           Northwestern Europe
+  Sweden:            Northwestern Europe
+  Norway:            Northwestern Europe
+  # Western Europe
+  Netherlands:       Western Europe
+  Belgium:           Western Europe
+  France:            Western Europe
+  Luxembourg:        Western Europe
+  # Central Europe
+  Germany:           Central Europe
+  Austria:           Central Europe
+  Switzerland:       Central Europe
+  Czech:             Central Europe
+  Czechia:           Central Europe
+  Slovakia:          Central Europe
+  Poland:            Central Europe
+  Hungary:           Central Europe
 
 region_to_macro:
   Northwestern Europe:  Northwestern Europe
   Western Europe:       Western Europe
   Central Europe:       Central Europe
-  Southern Europe:      Southern Europe
-  Southeastern Europe:  Southeastern Europe
-  Anatolia:             Near East
-  Levant:               Near East
 
 macro_to_label:
   Northwestern Europe:  Northwestern European ancestry
   Western Europe:       Western European ancestry
   Central Europe:       Central European ancestry
-  Southern Europe:      Southern European ancestry
-  Southeastern Europe:  Southeastern European ancestry
-  Near East:            Near Eastern ancestry

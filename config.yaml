@@ -3,6 +3,22 @@ vahaduo:
   engine_repo: https://github.com/vahaduo/vahaduo
   port: 0  # 0 = auto-select a free port at runtime
 
+# ---------------------------------------------------------------------------
+# User-to-profile mapping
+# ---------------------------------------------------------------------------
+# Maps user_id (data/users/<user_id>/) to an interpretation profile name.
+# If a user has an explicit mapping here, it is used automatically by
+# g25-full-run-user (source: "user_config").
+# If no mapping exists, stratified_macro is used (source: "default").
+# CLI --profile flag always overrides this map (source: "explicit_cli").
+#
+# All profile names must be in APPROVED_PROFILES (scripts/cli.py).
+user_profiles:
+  Ryan:   northwest_europe
+  Rivka:  levant_anatolia_balkan_mediterranean_europe
+  yaniv:  levant_anatolia_balkan_mediterranean_europe
+  Yigal:  levant_anatolia_balkan_mediterranean_europe
+
 data:
   targets_dir: data/targets
   sources_raw_dir: data/sources_raw
@@ -43,6 +59,12 @@ preprocessing:
     late_antiquity:  [  200,   800]
     medieval:        [  800,  1500]
 
+  outlier_filter:
+    # Remove outlier-adjusted samples whose names contain _o<CapitalisedWord>
+    # (e.g. England_Saxon_oIran.SG, Croatia_Roman_oNorthEurope.SG).
+    # Set false only for specialist/research modes.
+    enabled: true
+
   candidate_reduction:
     # Supported strategies: all | top_n | manual_list (optional)
     # all:         pass the full period bucket through (default)
@@ -77,6 +99,40 @@ optimization:
   # Options: alphabetical | nearest_by_distance (legacy) | stratified_macro (default)
   initial_panel_strategy: stratified_macro
   nearest_seed_count: 40                 # used only by nearest_by_distance
+  # Plausibility constraints — composite score = distance * all_penalty_factors
+  # Set enabled: false to revert to raw-distance selection (backward compatible)
+  plausibility:
+    enabled: true
+    # Drift penalty: isolated island populations with extreme genetic drift
+    # penalty = 1 + (total_drift_fraction * drift_weight)
+    drift_weight: 0.30
+    # Coherence penalty: too many distinct macro-regions in the mix
+    # penalty = 1 + max(0, n_active_regions - max_regions) * per_extra
+    coherence_max_regions: 5
+    coherence_per_extra_region: 0.10
+    coherence_min_percent: 3.0        # minimum % to count a region as active
+    # Spread penalty: many populations contributing < threshold% ("dust")
+    # penalty = 1 + n_dust_pops * spread_per_dust
+    spread_dust_threshold: 1.0
+    spread_per_dust: 0.02
+    # Substitute penalty: lone-outlier populations acting as proxies
+    # penalty = 1 + n_lone_outlier_substitutes * substitute_per_outlier
+    substitute_min_percent: 5.0
+    substitute_per_outlier: 0.10
+    # Remedy pass: re-run engine with flagged populations excluded
+    # Triggers when composite/distance ratio exceeds remedy_trigger_ratio
+    remedy_enabled: true
+    remedy_trigger_ratio: 1.15  # 15% composite inflation triggers remedy
+    remedy_drift_min_percent: 10.0  # only exclude drift-sensitive pops >= this %
+    # Lone substitute cleanup: remove sole, low-% macro-region noise
+    lone_substitute_enabled: true
+    lone_substitute_threshold: 5.0        # max % for a macro-region to be considered noise
+    lone_substitute_distance_tolerance: 0.001  # max allowable distance increase
+    # Low component cleanup: remove residual tiny isolated contributions (<3%)
+    # that emerge after the lone-sub pass produces a new engine result
+    low_component_enabled: true
+    low_component_threshold: 3.0          # max % for a tiny isolated pop to be noise
+    low_component_distance_tolerance: 0.001  # max allowable distance increase
 
 results:
   runs_dir: results/runs
@@ -85,62 +141,143 @@ interpretation:
   # prefix_to_region: maps the first underscore-token of a population name to a
   # canonical region name. Unlisted prefixes pass through unchanged.
   prefix_to_region:
+    # Levant
     Israel: Levant
     Lebanon: Levant
     Palestine: Levant
     Jordan: Levant
     Syria: Levant
+    # Mesopotamia
+    Iraq: Mesopotamia
+    # North Africa
     Egypt: North Africa
     Libya: North Africa
     Tunisia: North Africa
     Algeria: North Africa
     Morocco: North Africa
+    Sudan: North Africa
+    # Anatolia / Near East
     Turkey: Anatolia
+    # Caucasus
+    Armenia: Caucasus
+    Georgia: Caucasus
+    Azerbaijan: Caucasus
+    # Iran
+    Iran: Iran
+    # Arabian Peninsula
+    Saudi: Arabian Peninsula
+    Yemen: Arabian Peninsula
+    # Southeastern Europe (Balkans)
     Greece: Southeastern Europe
-    Italy: Southern Europe
-    Spain: Southern Europe
-    France: Western Europe
-    Germany: Central Europe
-    England: Northwestern Europe
-    Ireland: Northwestern Europe
-    Scotland: Northwestern Europe
-    Scandinavia: Northwestern Europe
     Croatia: Southeastern Europe
     Serbia: Southeastern Europe
     Romania: Southeastern Europe
     Bulgaria: Southeastern Europe
+    Albania: Southeastern Europe
+    Bosnia: Southeastern Europe
+    BosniaHerzegovina: Southeastern Europe
+    Macedonia: Southeastern Europe
+    Slovenia: Southeastern Europe
+    Montenegro: Southeastern Europe
+    # Southern Europe
+    Italy: Southern Europe
+    Spain: Southern Europe
+    Portugal: Southern Europe
+    Ibiza: Southern Europe
+    CanaryIslands: Southern Europe
+    Gibraltar: Southern Europe
+    # Western Europe
+    France: Western Europe
+    Netherlands: Western Europe
+    Belgium: Western Europe
+    Switzerland: Western Europe
+    Luxembourg: Western Europe
+    # Central Europe
+    Germany: Central Europe
+    Austria: Central Europe
+    Czech: Central Europe
+    Czechia: Central Europe
+    Slovakia: Central Europe
+    Hungary: Central Europe
+    Poland: Central Europe
+    # Northwestern Europe
+    England: Northwestern Europe
+    Britain: Northwestern Europe
+    Scotland: Northwestern Europe
+    Ireland: Northwestern Europe
+    Wales: Northwestern Europe
+    IsleOfMan: Northwestern Europe
+    ChannelIslands: Northwestern Europe
+    Scandinavia: Northwestern Europe
+    Denmark: Northwestern Europe
+    Sweden: Northwestern Europe
+    Norway: Northwestern Europe
+    Iceland: Northwestern Europe
+    Faroes: Northwestern Europe
+    # Northeastern Europe
     Lithuania: Northeastern Europe
     Latvia: Northeastern Europe
     Estonia: Northeastern Europe
-    Poland: Northeastern Europe
-    Iraq: Mesopotamia
-    Iran: Iran
-    Saudi: Arabian Peninsula
-    Yemen: Arabian Peninsula
+    Finland: Northeastern Europe
+    Ukraine: Northeastern Europe
+    Russia: Northeastern Europe
+    Belarus: Northeastern Europe
+    Moldova: Northeastern Europe
+    Crimea: Northeastern Europe
+    # Central Asia / Steppe
+    Kazakhstan: Central Asia
+    Kazakhstann: Central Asia
+    Kazakstan: Central Asia
+    Uzbekistan: Central Asia
+    Turkmenistan: Central Asia
+    Kyrgyzstan: Central Asia
+    Tajikistan: Central Asia
+    Mongolia: Central Asia
+    # South Asia
+    India: South Asia
+    Pakistan: South Asia
+    Nepal: South Asia
+    # East Asia
+    China: East Asia
+    Japan: East Asia
+    Korea: East Asia
+    SouthKorea: East Asia
+    Taiwan: East Asia
 
   # region_to_macro: maps canonical region names to macro-regions.
-  # Unlisted regions pass through as their own macro-region.
+  # Unlisted regions pass through unchanged as their own macro-region name.
+  # NOTE: Southeastern Europe maps to its own macro here (not Eastern Mediterranean).
+  # Use --profile eastmed_europe for EastMed-centric macro aggregation instead.
   region_to_macro:
     Levant: Eastern Mediterranean
     Anatolia: Eastern Mediterranean
-    Southeastern Europe: Eastern Mediterranean
     North Africa: North Africa
     Mesopotamia: Middle East
     Iran: Middle East
     Arabian Peninsula: Middle East
+    Caucasus: Caucasus
+    Southeastern Europe: Southeastern Europe
     Southern Europe: Southern Europe
     Western Europe: Western Europe
     Central Europe: Central Europe
     Northwestern Europe: Northwestern Europe
     Northeastern Europe: Northeastern Europe
+    Central Asia: Central Asia
+    South Asia: South Asia
+    East Asia: East Asia
 
   # macro_to_label: optional human-readable ancestry-family label per macro-region.
   macro_to_label:
     Eastern Mediterranean: East Mediterranean ancestry
     North Africa: North African ancestry
     Middle East: Middle Eastern ancestry
+    Caucasus: Caucasus ancestry
+    Southeastern Europe: Southeastern European ancestry
     Southern Europe: Southern European ancestry
     Western Europe: Western European ancestry
     Central Europe: Central European ancestry
     Northwestern Europe: Northwestern European ancestry
     Northeastern Europe: Northeastern European ancestry
+    Central Asia: Central Asian ancestry
+    South Asia: South Asian ancestry
+    East Asia: East Asian ancestry

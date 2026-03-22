@@ -1,0 +1,159 @@
+# interpretation_profiles/levant_anatolia_balkan_mediterranean_europe.yaml
+#
+# Profile: Levant / Anatolia / Balkans / Mediterranean + all Europe + adjacent corridor.
+# Intended for: Rivka, yaniv, Yigal
+#
+# Broader than jewish_eastmed_europe:
+#   - Adds Caucasus macro (Armenia, Georgia, Azerbaijan)
+#   - Adds Middle East macro (Iran, Mesopotamia/Iraq)
+#   - Explicitly excludes Arabian Peninsula via excluded_regions guard
+#   - Still excludes North Africa, Central Asia, East Asia, South Asia, Sub-Saharan Africa
+#
+# Filtering is metadata-driven:
+#   - canonical_macro_region whitelist (primary filter)
+#   - broad_super_region blacklist (defense-in-depth)
+#   - canonical_region blacklist (fine-grained Arabian Peninsula exclusion)
+# No substring matching on sample names.
+
+profile_label: "Levant / Anatolia / Balkans / Mediterranean + Europe + Adjacent Corridor"
+
+use_standard_mode: true
+apply_plausibility_constraints: true
+apply_remedy_passes: true
+
+# ---------------------------------------------------------------------------
+# Candidate universe filter
+# ---------------------------------------------------------------------------
+candidate_filter:
+  # Primary whitelist by canonical_macro_region (from config.yaml region_to_macro).
+  # Eastern Mediterranean = Levant (Israel, Lebanon, etc.) + Anatolia (Turkey).
+  # All European sub-regions are included.
+  # Caucasus = Armenia, Georgia, Azerbaijan.
+  # Middle East = Iran + Mesopotamia (Iraq); Arabian Peninsula excluded below.
+  allowed_macro_regions:
+    - Eastern Mediterranean   # Levant (Israel, Lebanon, Palestine, Jordan, Syria) + Anatolia
+    - Southeastern Europe     # Greece, Croatia, Bulgaria, Serbia, Bosnia, etc.
+    - Southern Europe         # Italy, Spain, Portugal, Mediterranean Europe
+    - Western Europe          # Netherlands, France, Belgium, Luxembourg
+    - Central Europe          # Germany, Austria, Switzerland, Czech, Poland, etc.
+    - Northwestern Europe     # British Isles, Scandinavia, Iceland, Faroes
+    - Northeastern Europe     # Ukraine, Russia, Baltic states, Finland
+    - Caucasus                # Armenia, Georgia, Azerbaijan (adjacent West Eurasian corridor)
+    - Middle East             # Iran + Mesopotamia (Iraq); Arabia blocked below
+
+  # Defense-in-depth: drop any candidate whose broad_super_region is in this set.
+  # NOTE: do NOT add "Middle East" here — Eastern Mediterranean also maps to
+  # broad_super_region = "Middle East" and would be accidentally excluded.
+  excluded_super_regions:
+    - North Africa
+    - Central Asia
+    - East Asia
+    - South Asia
+    - Sub-Saharan Africa
+
+  # Fine-grained exclusion: Arabian Peninsula (Saudi, Yemen) within Middle East macro.
+  # Prevents Arabia from entering through the Middle East whitelist.
+  excluded_regions:
+    - Arabian Peninsula
+
+# ---------------------------------------------------------------------------
+# Interpretation mappings (for result labeling and macro-region aggregation)
+# ---------------------------------------------------------------------------
+prefix_to_region:
+  # Levant / East Mediterranean
+  Israel:            Levant
+  Lebanon:           Levant
+  Palestine:         Levant
+  Jordan:            Levant
+  Syria:             Levant
+  # Anatolia
+  Turkey:            Anatolia
+  Cyprus:            Anatolia
+  # Caucasus (adjacent corridor)
+  Armenia:           Caucasus
+  Georgia:           Caucasus
+  Azerbaijan:        Caucasus
+  # Near Eastern corridor
+  Iran:              Iran
+  Iraq:              Mesopotamia
+  # Southeastern Europe
+  Greece:            Southeastern Europe
+  Croatia:           Southeastern Europe
+  Serbia:            Southeastern Europe
+  Romania:           Southeastern Europe
+  Bulgaria:          Southeastern Europe
+  Albania:           Southeastern Europe
+  Bosnia:            Southeastern Europe
+  BosniaHerzegovina: Southeastern Europe
+  Macedonia:         Southeastern Europe
+  Slovenia:          Southeastern Europe
+  Montenegro:        Southeastern Europe
+  # Southern Europe
+  Italy:             Southern Europe
+  Spain:             Southern Europe
+  Portugal:          Southern Europe
+  Ibiza:             Southern Europe
+  CanaryIslands:     Southern Europe
+  Gibraltar:         Southern Europe
+  # Western Europe
+  France:            Western Europe
+  Netherlands:       Western Europe
+  Belgium:           Western Europe
+  Luxembourg:        Western Europe
+  # Central Europe
+  Germany:           Central Europe
+  Austria:           Central Europe
+  Switzerland:       Central Europe
+  Czech:             Central Europe
+  Czechia:           Central Europe
+  Slovakia:          Central Europe
+  Poland:            Central Europe
+  Hungary:           Central Europe
+  # Northwestern Europe
+  England:           Northwestern Europe
+  Britain:           Northwestern Europe
+  Scotland:          Northwestern Europe
+  Ireland:           Northwestern Europe
+  Wales:             Northwestern Europe
+  IsleOfMan:         Northwestern Europe
+  ChannelIslands:    Northwestern Europe
+  Iceland:           Northwestern Europe
+  Faroes:            Northwestern Europe
+  Scandinavia:       Northwestern Europe
+  Denmark:           Northwestern Europe
+  Sweden:            Northwestern Europe
+  Norway:            Northwestern Europe
+  # Northeastern Europe
+  Lithuania:         Northeastern Europe
+  Latvia:            Northeastern Europe
+  Estonia:           Northeastern Europe
+  Finland:           Northeastern Europe
+  Russia:            Northeastern Europe
+  Ukraine:           Northeastern Europe
+  Moldova:           Northeastern Europe
+  Belarus:           Northeastern Europe
+  Crimea:            Northeastern Europe
+
+region_to_macro:
+  Levant:              Eastern Mediterranean
+  Anatolia:            Eastern Mediterranean
+  Caucasus:            Caucasus
+  Iran:                Near Eastern Corridor
+  Mesopotamia:         Near Eastern Corridor
+  Southeastern Europe: Southeastern Europe
+  Southern Europe:     Southern Europe
+  Western Europe:      Western Europe
+  Central Europe:      Central Europe
+  Northwestern Europe: Northwestern Europe
+  Northeastern Europe: Northeastern Europe
+
+macro_to_label:
+  Eastern Mediterranean:  East Mediterranean ancestry
+  Caucasus:               Caucasian ancestry
+  Near Eastern Corridor:  Near Eastern ancestry (adjacent corridor)
+  Southeastern Europe:    Southeastern European ancestry
+  Southern Europe:        Southern European ancestry
+  Western Europe:         Western European ancestry
+  Central Europe:         Central European ancestry
+  Northwestern Europe:    Northwestern European ancestry
+  Northeastern Europe:    Northeastern European ancestry

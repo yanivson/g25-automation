@@ -5,38 +5,93 @@
 # as they appear in ancient DNA panels.
 
 prefix_to_region:
-  Israel:      Levant
-  Lebanon:     Levant
-  Palestine:   Levant
-  Jordan:      Levant
-  Syria:       Levant
-  Egypt:       North Africa
-  Libya:       North Africa
-  Tunisia:     North Africa
-  Algeria:     North Africa
-  Morocco:     North Africa
-  Turkey:      Anatolia
-  Greece:      Southeastern Europe
-  Croatia:     Southeastern Europe
-  Serbia:      Southeastern Europe
-  Romania:     Southeastern Europe
-  Bulgaria:    Southeastern Europe
-  Hungary:     Central Europe
-  Italy:       Southern Europe
-  Spain:       Southern Europe
-  Portugal:    Southern Europe
-  France:      Western Europe
-  Germany:     Central Europe
-  England:     Northwestern Europe
-  Ireland:     Northwestern Europe
-  Scotland:    Northwestern Europe
-  Iraq:        Mesopotamia
-  Iran:        Iran
-  Saudi:       Arabian Peninsula
-  Yemen:       Arabian Peninsula
-  Armenia:     Caucasus
-  Georgia:     Caucasus
-  Azerbaijan:  Caucasus
+  # Levant
+  Israel:            Levant
+  Lebanon:           Levant
+  Palestine:         Levant
+  Jordan:            Levant
+  Syria:             Levant
+  # Mesopotamia
+  Iraq:              Mesopotamia
+  # North Africa
+  Egypt:             North Africa
+  Libya:             North Africa
+  Tunisia:           North Africa
+  Algeria:           North Africa
+  Morocco:           North Africa
+  Sudan:             North Africa
+  # Anatolia
+  Turkey:            Anatolia
+  # Iran / Caucasus
+  Iran:              Iran
+  Armenia:           Caucasus
+  Georgia:           Caucasus
+  Azerbaijan:        Caucasus
+  # Arabian Peninsula
+  Saudi:             Arabian Peninsula
+  Yemen:             Arabian Peninsula
+  # Southeastern Europe (Balkans)
+  Greece:            Southeastern Europe
+  Croatia:           Southeastern Europe
+  Serbia:            Southeastern Europe
+  Romania:           Southeastern Europe
+  Bulgaria:          Southeastern Europe
+  Albania:           Southeastern Europe
+  Bosnia:            Southeastern Europe
+  BosniaHerzegovina: Southeastern Europe
+  Macedonia:         Southeastern Europe
+  Slovenia:          Southeastern Europe
+  Montenegro:        Southeastern Europe
+  # Southern Europe
+  Italy:             Southern Europe
+  Spain:             Southern Europe
+  Portugal:          Southern Europe
+  Ibiza:             Southern Europe
+  CanaryIslands:     Southern Europe
+  # Western Europe
+  France:            Western Europe
+  Netherlands:       Western Europe
+  Belgium:           Western Europe
+  Switzerland:       Western Europe
+  Luxembourg:        Western Europe
+  # Central Europe
+  Germany:           Central Europe
+  Austria:           Central Europe
+  Czech:             Central Europe
+  Czechia:           Central Europe
+  Slovakia:          Central Europe
+  Hungary:           Central Europe
+  Poland:            Central Europe
+  # Northwestern Europe
+  England:           Northwestern Europe
+  Britain:           Northwestern Europe
+  Scotland:          Northwestern Europe
+  Ireland:           Northwestern Europe
+  Wales:             Northwestern Europe
+  IsleOfMan:         Northwestern Europe
+  ChannelIslands:    Northwestern Europe
+  Denmark:           Northwestern Europe
+  Sweden:            Northwestern Europe
+  Norway:            Northwestern Europe
+  Iceland:           Northwestern Europe
+  Faroes:            Northwestern Europe
+  # Northeastern Europe
+  Lithuania:         Northeastern Europe
+  Latvia:            Northeastern Europe
+  Estonia:           Northeastern Europe
+  Finland:           Northeastern Europe
+  Russia:            Northeastern Europe
+  Ukraine:           Northeastern Europe
+  Belarus:           Northeastern Europe
+  Moldova:           Northeastern Europe
+  # Central Asia
+  Kazakhstan:        Central Asia
+  Kazakstan:         Central Asia
+  Kazakhstann:       Central Asia
+  Kyrgyzstan:        Central Asia
+  Uzbekistan:        Central Asia
+  Tajikistan:        Central Asia
+  Turkmenistan:      Central Asia
 
 region_to_macro:
   Levant:               Eastern Mediterranean

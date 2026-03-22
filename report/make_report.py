@@ -198,7 +198,7 @@ def _extract_period_data(
 # Public API
 # ---------------------------------------------------------------------------
 
-def make_report(user_dir: Path | str, theme: str = "dark") -> Path:
+def make_report(user_dir: Path | str, theme: str = "light", lang: str = "en") -> Path:
     """
     Generate report/index.html for the given user directory.
 
@@ -237,22 +237,20 @@ def make_report(user_dir: Path | str, theme: str = "dark") -> Path:
 
     period_data = _extract_period_data(latest, final_report, evidence_pack)
 
-    interpretation = _load_text_opt(
-        user_dir / "interpretation" / "interpretation.txt"
-    )
-
-    # Inject initial_panel_strategy as profile when run has no profile field.
-    _run = final_report.get("run", {})
-    if not _run.get("profile"):
-        try:
-            import yaml  # type: ignore
-            _cfg_path = Path(__file__).parent.parent / "config.yaml"
-            _cfg = yaml.safe_load(_cfg_path.read_text(encoding="utf-8"))
-            _strategy = (_cfg.get("optimization") or {}).get("initial_panel_strategy", "")
-            if _strategy:
-                final_report = {**final_report, "run": {**_run, "profile": _strategy}}
-        except Exception:
-            pass
+    if lang == "he":
+        interpretation = _load_text_opt(
+            user_dir / "interpretation" / "interpretation_he.txt"
+        )
+        ydna_interpretation = _load_text_opt(
+            user_dir / "interpretation" / "ydna_he.txt"
+        )
+    else:
+        interpretation = _load_text_opt(
+            user_dir / "interpretation" / "interpretation.txt"
+        )
+        ydna_interpretation = _load_text_opt(
+            user_dir / "interpretation" / "ydna.txt"
+        )
 
     # Warn if run_id is absent — indicates an older pipeline version wrote the JSON.
     _run_id = str(final_report.get("run", {}).get("run_id", ""))
@@ -287,11 +285,14 @@ def make_report(user_dir: Path | str, theme: str = "dark") -> Path:
         period_data=period_data,
         interpretation=interpretation,
         theme=theme,
+        ydna_interpretation=ydna_interpretation,
+        lang=lang,
     )
 
     report_dir = user_dir / "report"
     report_dir.mkdir(parents=True, exist_ok=True)
-    output = report_dir / "report.html"
+    filename = "report.html" if lang == "en" else f"report_{lang}.html"
+    output = report_dir / filename
     output.write_text(html, encoding="utf-8")
     return output
 
@@ -309,8 +310,14 @@ def cmd_make_report(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--theme",
         choices=["dark", "light", "auto"],
-        default="dark",
-        help="Color theme (default: dark)",
+        default="light",
+        help="Color theme (default: light)",
+    )
+    parser.add_argument(
+        "--lang",
+        choices=["en", "he"],
+        default="en",
+        help="Report language: en (default) or he (Hebrew)",
     )
     parser.add_argument(
         "--output-dir",
@@ -320,7 +327,7 @@ def cmd_make_report(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     try:
-        output = make_report(args.user_dir, theme=args.theme)
+        output = make_report(args.user_dir, theme=args.theme, lang=args.lang)
         if args.output_dir:
             import shutil
             dest = Path(args.output_dir) / "report.html"

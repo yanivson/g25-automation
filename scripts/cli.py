@@ -19,6 +19,145 @@ from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
+# Profile resolution — central, validated, logged
+# ---------------------------------------------------------------------------
+
+# All valid profile names. Free-form values are rejected.
+APPROVED_PROFILES: frozenset[str] = frozenset({
+    "stratified_macro",                              # safe baseline — uses config.yaml mappings
+    "eastmed_europe",                                # East Mediterranean + Southern European
+    "northwest_europe",                              # British Isles / NW European — Ryan
+    "jewish_eastmed_europe",                         # Jewish / EastMed + Europe (narrower)
+    "levant_anatolia_balkan_mediterranean_europe",   # Levant/Anatolia/Balkans/Med + Europe + corridor — Rivka, yaniv, Yigal
+    "minimal",                                       # minimal macro grouping
+})
+
+# Profiles that have a corresponding YAML file in interpretation_profiles/.
+# "stratified_macro" uses config.yaml mappings directly, not a YAML profile.
+_PROFILE_HAS_YAML: frozenset[str] = frozenset({
+    "eastmed_europe",
+    "northwest_europe",
+    "jewish_eastmed_europe",
+    "levant_anatolia_balkan_mediterranean_europe",
+    "minimal",
+})
+
+_SAFE_DEFAULT_PROFILE = "stratified_macro"
+
+# EastMed-specific sanity threshold: warn if Eastern Mediterranean macro < this %.
+_EASTMED_SANITY_THRESHOLD = 30.0
+
+
+def _resolve_profile(
+    explicit: str | None,
+    user_id: str | None = None,
+    user_profiles_map: dict[str, str] | None = None,
+) -> tuple[str, str]:
+    """
+    Resolve the run profile and return (profile_name, source).
+
+    Resolution priority:
+      1. explicit CLI --profile flag  -> source = "explicit_cli"
+      2. user_profiles map in config  -> source = "user_config"
+      3. safe default (stratified_macro) -> source = "default"
+
+    Raises SystemExit if the resolved profile is not in APPROVED_PROFILES.
+    """
+    def _validate(name: str, src: str) -> tuple[str, str]:
+        if name not in APPROVED_PROFILES:
+            print(
+                f"[ERROR] Profile '{name}' (source: {src}) is not in the approved list: "
+                f"{sorted(APPROVED_PROFILES)}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        return name, src
+
+    if explicit is not None:
+        return _validate(explicit, "explicit_cli")
+
+    if user_id and user_profiles_map and user_id in user_profiles_map:
+        return _validate(user_profiles_map[user_id], "user_config")
+
+    return _SAFE_DEFAULT_PROFILE, "default"
+
+
+def _log_profile(profile_name: str, source: str, label: str = "") -> None:
+    """Print a standardised profile-selection line at run start."""
+    label_str = f"  label={label!r}" if label else ""
+    print(f"[profile] selected={profile_name!r}  source={source}{label_str}")
+
+
+def _sanity_check_plausibility(
+    aggregated: "list",
+    populations: "list",
+) -> None:
+    """
+    Warn about implausible ancestry patterns after optimization.
+
+    Checks:
+    1. Outlier-adjusted samples still present in top results (filter may have
+       been disabled or bypassed).
+    2. Unexpectedly high Central Asian / Steppe signal for typical targets.
+    Does not block execution.
+    """
+    from preprocessing.outlier_filter import is_outlier_adjusted
+
+    outlier_tops = [
+        p for p in sorted(populations, key=lambda x: x.percent, reverse=True)[:5]
+        if is_outlier_adjusted(p.name)
+    ]
+    if outlier_tops:
+        names = ", ".join(p.name for p in outlier_tops)
+        print(
+            f"[plausibility] WARNING: outlier-adjusted samples in top 5 results: {names}. "
+            "Consider enabling outlier_filter in config.yaml.",
+            file=sys.stderr,
+        )
+
+    for agg in aggregated:
+        region = agg.region if hasattr(agg, "region") else agg.get("region", "")
+        pct = agg.percent if hasattr(agg, "percent") else agg.get("percent", 0)
+        if region == "Kazakhstan" and pct > 15:
+            print(
+                f"[plausibility] WARNING: Kazakhstan {pct:.1f}% — "
+                "implausibly high for most European/Mediterranean targets.",
+                file=sys.stderr,
+            )
+        if region == "Lebanon" and pct > 30:
+            print(
+                f"[plausibility] WARNING: Lebanon {pct:.1f}% — "
+                "check whether EastMed profile is appropriate for this target.",
+                file=sys.stderr,
+            )
+
+
+def _sanity_check_profile(
+    profile_name: str,
+    by_macro_region: list[dict],
+) -> None:
+    """
+    Emit a warning when profile=eastmed_europe but EastMed signal is low.
+    Does not block execution.
+    """
+    if profile_name != "eastmed_europe":
+        return
+    eastmed_pct = sum(
+        float(g.get("percent", 0))
+        for g in by_macro_region
+        if "Eastern Mediterranean" in str(g.get("macro_region", ""))
+    )
+    if eastmed_pct < _EASTMED_SANITY_THRESHOLD:
+        print(
+            f"[profile] WARNING: eastmed_europe profile selected but Eastern "
+            f"Mediterranean ancestry is only {eastmed_pct:.1f}% "
+            f"(threshold {_EASTMED_SANITY_THRESHOLD}%). "
+            "This profile may be incorrect for this target.",
+            file=sys.stderr,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Shared config loader
 # ---------------------------------------------------------------------------
 
@@ -89,6 +228,7 @@ def cmd_preprocess(argv: list[str] | None = None) -> None:
 
     from preprocessing.loader import load_g25_file
     from preprocessing.normalize_names import add_normalized_name
+    from preprocessing.outlier_filter import filter_outliers
     from preprocessing.region_filter import RegionConfig, filter_by_region
     from preprocessing.date_extractor import DateConfig, extract_dates
     from preprocessing.split_by_period import split_by_period
@@ -101,7 +241,7 @@ def cmd_preprocess(argv: list[str] | None = None) -> None:
     # 2. Normalize
     df = add_normalized_name(df)
 
-    # 3. Region filter
+    # 3. Region filter — audit only; does NOT drive period splitting
     rf_cfg = raw.get("preprocessing", {}).get("region_filter", {})
     region_config = RegionConfig(
         allowed_keywords=rf_cfg.get("allowed_keywords", []),
@@ -110,17 +250,25 @@ def cmd_preprocess(argv: list[str] | None = None) -> None:
     run_id = _run_id()
     df_filtered = filter_by_region(df, region_config, audit_dir, run_id)
     print(
-        f"  Region filter: {len(df_filtered)} kept, {len(df) - len(df_filtered)} removed."
+        f"  Region filter (audit only): {len(df_filtered)} kept, "
+        f"{len(df) - len(df_filtered)} removed."
         f"\n  Audit written to {audit_dir}/"
         f"\n    {run_id}_kept.csv"
         f"\n    {run_id}_removed.csv"
     )
 
-    # Drop filter-only columns so period CSVs are clean 26-column G25 files
+    # 4. Build full outlier-filtered dataset for period splitting.
+    # Period CSVs must cover all regions, not just the region-filter subset.
+    outlier_filter_enabled = (
+        raw.get("preprocessing", {})
+        .get("outlier_filter", {})
+        .get("enabled", True)
+    )
     g25_columns = ["name"] + [f"dim_{i}" for i in range(1, 26)]
-    df_filtered = df_filtered[[c for c in g25_columns if c in df_filtered.columns]]
+    df_full = df[[c for c in g25_columns if c in df.columns]].copy()
+    df_full = filter_outliers(df_full, enabled=outlier_filter_enabled, label="full pool")
 
-    # 4. Extract dates
+    # 5. Extract dates on the full pool
     de_cfg = raw.get("preprocessing", {}).get("date_extraction", {})
     date_config = DateConfig(
         strategy=de_cfg.get("strategy", "unknown"),
@@ -128,16 +276,16 @@ def cmd_preprocess(argv: list[str] | None = None) -> None:
         column_name=de_cfg.get("column_name"),
         metadata_file=de_cfg.get("metadata_file"),
     )
-    dates = extract_dates(df_filtered, date_config)
-    known = dates.notna().sum()
-    print(f"  Date extraction ({date_config.strategy}): {known}/{len(dates)} dated rows.")
+    dates_full = extract_dates(df_full, date_config)
+    known = dates_full.notna().sum()
+    print(f"  Date extraction ({date_config.strategy}): {known}/{len(dates_full)} dated rows.")
 
-    # 5. Split by period
+    # 6. Split by period using full outlier-filtered dataset
     periods_cfg = raw.get("preprocessing", {}).get("periods", {})
     periods = {name: tuple(bounds) for name, bounds in periods_cfg.items()}
-    buckets = split_by_period(df_filtered, dates, periods, output_dir=output_dir)
+    buckets = split_by_period(df_full, dates_full, periods, output_dir=output_dir)
 
-    # 6. Summary
+    # 7. Summary
     print("\nPeriod buckets written:")
     total_rows = 0
     for bucket_name, bucket_df in buckets.items():
@@ -283,11 +431,13 @@ def cmd_run(argv: list[str] | None = None) -> None:
 
     config = load_config(config_path)
 
-    # Load interpretation profile if requested
+    profile_name, profile_source = _resolve_profile(args.profile)
+
+    # Load interpretation YAML only for profiles that have one.
     interpretation = None
-    if args.profile is not None:
+    if profile_name in _PROFILE_HAS_YAML:
         try:
-            interpretation = load_profile(args.profile, config.profiles_dir)
+            interpretation = load_profile(profile_name, config.profiles_dir)
         except FileNotFoundError as exc:
             print(f"[ERROR] {exc}", file=sys.stderr)
             sys.exit(1)
@@ -295,7 +445,7 @@ def cmd_run(argv: list[str] | None = None) -> None:
     print(f"Target:         {target_path}")
     print(f"Candidate pool: {pool_path}")
     print(f"Config:         {config_path}")
-    print(f"Profile:        {args.profile or '(none)'}")
+    _log_profile(profile_name, profile_source)
     print(f"Max iterations: {config.optimization.max_iterations}")
     print(f"Stop distance:  {config.optimization.stop_distance}")
     print()
@@ -305,7 +455,7 @@ def cmd_run(argv: list[str] | None = None) -> None:
         candidate_pool_file=pool_path,
         config=config,
         interpretation=interpretation,
-        profile_name=args.profile,
+        profile_name=profile_name,
     )
 
     from optimizer.aggregation import aggregate_by_prefix
@@ -359,6 +509,7 @@ def _find_latest_run(runs_dir: Path) -> str:
 def _run_interpretation_from_run_dir(
     run_dir: Path,
     *,
+    profile_name: str | None = None,
     user_id: str | None = None,
     display_name: str | None = None,
     identity_context: str | None = None,
@@ -372,24 +523,13 @@ def _run_interpretation_from_run_dir(
     called from cmd_full_run_user (which has a loaded UserProfile).
     When called from cmd_full_run, all user metadata kwargs are None.
 
-    config_path, when provided, is used to:
-    - Populate profile with initial_panel_strategy when meta.json has profile=null
-    - Compute by_macro_region from by_country when generic_summary.json is absent
+    profile_name, when provided, is used as the explicit profile label in
+    the evidence pack (overrides meta.json profile field when set).
+    config_path, when provided, is used to compute by_macro_region from
+    by_country when generic_summary.json is absent.
     """
     from interpretation.evidence_pack import build_evidence_from_run_dir
     from interpretation.interpreter import run_interpretation
-
-    # Derive profile fallback from config when the run did not use --profile.
-    profile_name_fallback: str | None = None
-    if config_path is not None and config_path.exists():
-        try:
-            import yaml  # type: ignore
-            _cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-            profile_name_fallback = (_cfg.get("optimization") or {}).get(
-                "initial_panel_strategy"
-            )
-        except Exception:  # noqa: BLE001
-            pass
 
     print()
     evidence = build_evidence_from_run_dir(
@@ -398,7 +538,7 @@ def _run_interpretation_from_run_dir(
         display_name=display_name,
         identity_context=identity_context,
         ydna_haplogroup=ydna_haplogroup,
-        profile_name_fallback=profile_name_fallback,
+        profile_name_fallback=profile_name,
         config_path=config_path,
     )
     run_interpretation(run_dir, evidence)
@@ -489,10 +629,12 @@ def cmd_full_run(argv: list[str] | None = None) -> None:
         data_cfg.get("candidate_clusters_dir", "data/candidate_clusters")
     )
 
+    profile_name, profile_source = _resolve_profile(args.profile)
+
     print(f"[full-run] Target:      {target_path}")
     print(f"[full-run] Source:      {source_path}")
     print(f"[full-run] Pool source: {args.pool_source}")
-    print(f"[full-run] Profile:     {args.profile or '(none)'}")
+    _log_profile(profile_name, profile_source)
     print(f"[full-run] Dedup:       {'disabled (--no-dedup)' if args.no_dedup else 'enabled'}")
     print()
 
@@ -504,10 +646,20 @@ def cmd_full_run(argv: list[str] | None = None) -> None:
     from preprocessing.region_filter import RegionConfig, filter_by_region
     from preprocessing.date_extractor import DateConfig, extract_dates
     from preprocessing.split_by_period import split_by_period
+    from preprocessing.outlier_filter import filter_outliers
+
+    of_cfg = raw.get("preprocessing", {}).get("outlier_filter", {})
+    outlier_filter_enabled = of_cfg.get("enabled", True)
 
     df = load_g25_file(source_path)
     df = add_normalized_name(df)
 
+    g25_columns = ["name"] + [f"dim_{i}" for i in range(1, 26)]
+
+    # Region filter: run for audit/provenance only. Its output is used when
+    # pool_source=filtered. Period splitting always uses the full dataset so
+    # that period diagnostics are valid for all ancestry backgrounds, not just
+    # the EastMed-centric region that the allowed_keywords were designed for.
     rf_cfg = raw.get("preprocessing", {}).get("region_filter", {})
     region_config = RegionConfig(
         allowed_keywords=rf_cfg.get("allowed_keywords", []),
@@ -516,9 +668,13 @@ def cmd_full_run(argv: list[str] | None = None) -> None:
     run_id = _run_id()
     df_filtered = filter_by_region(df, region_config, audit_dir, run_id)
     print(f"  Region filter: {len(df_filtered)} kept, {len(df) - len(df_filtered)} removed.")
-
-    g25_columns = ["name"] + [f"dim_{i}" for i in range(1, 26)]
     df_filtered = df_filtered[[c for c in g25_columns if c in df_filtered.columns]]
+    df_filtered = filter_outliers(df_filtered, enabled=outlier_filter_enabled, label="filtered")
+
+    # Full outlier-filtered dataset — used for both period splitting and the
+    # main candidate pool (when pool_source=full). Avoids region-filter bias.
+    df_full = df[[c for c in g25_columns if c in df.columns]].copy()
+    df_full = filter_outliers(df_full, enabled=outlier_filter_enabled, label="full pool")
 
     de_cfg = raw.get("preprocessing", {}).get("date_extraction", {})
     date_config = DateConfig(
@@ -527,11 +683,13 @@ def cmd_full_run(argv: list[str] | None = None) -> None:
         column_name=de_cfg.get("column_name"),
         metadata_file=de_cfg.get("metadata_file"),
     )
-    dates = extract_dates(df_filtered, date_config)
+    # Split periods from the full outlier-filtered dataset so period pools
+    # contain European, Anatolian, and all other relevant samples.
+    dates_full = extract_dates(df_full, date_config)
 
     periods_cfg = raw.get("preprocessing", {}).get("periods", {})
     periods = {name: tuple(bounds) for name, bounds in periods_cfg.items()}
-    split_by_period(df_filtered, dates, periods, output_dir=periods_dir)
+    split_by_period(df_full, dates_full, periods, output_dir=periods_dir)
 
     # ── Step 2: Build candidate pool ───────────────────────────────────────
     print("[full-run] Step 2/3: building candidate pool ...")
@@ -540,12 +698,10 @@ def cmd_full_run(argv: list[str] | None = None) -> None:
     from preprocessing.deduplicate_candidates import DeduplicationConfig, deduplicate_candidates
 
     if args.pool_source == "full":
-        # Use all source populations — skip region filter output, re-load raw
-        df_for_pool = load_g25_file(source_path)
-        df_for_pool = df_for_pool[[c for c in g25_columns if c in df_for_pool.columns]]
+        df_for_pool = df_full
         pool_name_stem = source_path.stem + "_full_pool"
     else:
-        # Use region-filtered populations
+        # pool_source=filtered: use only region-filter-passing populations.
         df_for_pool = df_filtered
         pool_name_stem = source_path.stem + "_pool"
 
@@ -575,6 +731,23 @@ def cmd_full_run(argv: list[str] | None = None) -> None:
     pool.to_csv(pool_path, index=False)
     print(f"  Pool written: {pool_path}  ({len(pool)} populations)")
 
+    # Rebuild period pools from the freshly-written (outlier-clean) period CSVs.
+    # This ensures period diagnostics also use clean pools.
+    for period_name in periods:
+        period_csv = periods_dir / f"{period_name}.csv"
+        if not period_csv.exists():
+            continue
+        try:
+            import pandas as _pd
+            period_df = _pd.read_csv(period_csv)
+            if period_df.empty:
+                continue
+            period_pool = build_candidate_pool(period_df, candidate_config, output_path=None)
+            pools_dir.mkdir(parents=True, exist_ok=True)
+            period_pool.to_csv(pools_dir / f"{period_name}_pool.csv", index=False)
+        except Exception as _e:
+            print(f"  [warn] Could not rebuild {period_name}_pool.csv: {_e}")
+
     # ── Step 3: Run optimization ───────────────────────────────────────────
     print("[full-run] Step 3/3: running optimization ...")
 
@@ -582,10 +755,11 @@ def cmd_full_run(argv: list[str] | None = None) -> None:
 
     config = load_config(config_path)
 
+    # Load interpretation YAML only for profiles that have one.
     interpretation = None
-    if args.profile is not None:
+    if profile_name in _PROFILE_HAS_YAML:
         try:
-            interpretation = load_profile(args.profile, config.profiles_dir)
+            interpretation = load_profile(profile_name, config.profiles_dir)
         except FileNotFoundError as exc:
             print(f"[ERROR] {exc}", file=sys.stderr)
             sys.exit(1)
@@ -595,7 +769,7 @@ def cmd_full_run(argv: list[str] | None = None) -> None:
         candidate_pool_file=pool_path,
         config=config,
         interpretation=interpretation,
-        profile_name=args.profile,
+        profile_name=profile_name,
     )
 
     from optimizer.aggregation import aggregate_by_prefix
@@ -619,8 +793,13 @@ def cmd_full_run(argv: list[str] | None = None) -> None:
     for pop in sorted(best.result.populations, key=lambda p: p.percent, reverse=True)[:10]:
         print(f"  {pop.percent:6.2f}%  {pop.name}")
 
+    by_macro_for_guard: list[dict] = []
     if interpretation is not None:
         generic = build_generic_summary(best.result, aggregated, interpretation)
+        by_macro_for_guard = [
+            {"macro_region": g.macro_region, "percent": g.percent}
+            for g in generic.by_macro_region
+        ]
         print()
         print("By macro-region:")
         for grp in generic.by_macro_region:
@@ -631,11 +810,14 @@ def cmd_full_run(argv: list[str] | None = None) -> None:
         for line in generic.summary_lines:
             print(f"  {line}")
 
+    _sanity_check_profile(profile_name, by_macro_for_guard)
+    _sanity_check_plausibility(aggregated, best.result.populations)
+
     print()
     run_dir = config.runs_dir / _find_latest_run(config.runs_dir)
     print(f"Artifacts: {run_dir}/")
 
-    _run_interpretation_from_run_dir(run_dir)
+    _run_interpretation_from_run_dir(run_dir, profile_name=profile_name)
 
 
 # ---------------------------------------------------------------------------
@@ -784,19 +966,30 @@ def cmd_full_run_user(argv: list[str] | None = None) -> None:
     # Ensure user subdirectory tree exists before the run
     ensure_user_dirs(layout)
 
-    # Print user context header
+    # Load config early to get user_profiles mapping for profile auto-selection.
+    config_path_early = Path(args.config) if args.config else Path("config.yaml")
+    _raw_early = _load_raw_config(config_path_early)
+    user_profiles_map = _raw_early.get("user_profiles") or {}
+
     p = user_folder.profile
+    profile_name, profile_source = _resolve_profile(
+        args.profile,
+        user_id=p.user_id,
+        user_profiles_map=user_profiles_map,
+    )
+
+    # Print user context header
     print(f"[user-run] User:    {p.user_id} ({p.display_name})")
     if p.identity_context:
         print(f"[user-run] Context: {p.identity_context}")
     if p.ydna_haplogroup:
         print(f"[user-run] Y-DNA:   {p.ydna_haplogroup}")
+    _log_profile(profile_name, profile_source)
     print()
 
     # Build argv and delegate to cmd_full_run (writes to config.runs_dir)
     full_run_argv: list[str] = [str(user_folder.target_file), args.source]
-    if args.profile:
-        full_run_argv += ["--profile", args.profile]
+    full_run_argv += ["--profile", profile_name]
     if args.no_dedup:
         full_run_argv.append("--no-dedup")
     full_run_argv += ["--pool-source", args.pool_source]
@@ -842,6 +1035,7 @@ def cmd_full_run_user(argv: list[str] | None = None) -> None:
     # by_macro_region derived from config.yaml mappings.
     _run_interpretation_from_run_dir(
         dest_run_dir,
+        profile_name=profile_name,
         user_id=p.user_id,
         display_name=p.display_name,
         identity_context=p.identity_context,

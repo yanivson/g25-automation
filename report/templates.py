@@ -9,6 +9,12 @@ from .assets import get_css, get_js
 from .theme import (
     COUNTRY_COLORS, MACRO_COLORS, SAMPLE_COLORS, PERIOD_COLORS,
 )
+from .translations import get_t, translate_country, translate_macro, translate_period, translate_quality
+from .sample_enrichment import enrich_sample, has_enrichment
+
+# Module-level mutable used to pass read_more label into the button string
+# (set by _format_interpretation before the f-string that references it)
+_interp_read_more: str = "Read full interpretation"
 
 
 # ---------------------------------------------------------------------------
@@ -137,11 +143,8 @@ def _group_small_countries(
     percent_key: str = "percent",
     threshold: float = 2.0,
 ) -> list[dict]:
-    """Group entries below *threshold*% (excluding the top contributor) into
-    geo-labeled 'Other X' buckets.
-
-    European buckets include sub-region hints: 'Other European (Baltic/Balkan)'.
-    At most 2 sub-region names are shown to avoid clutter.
+    """Group entries below *threshold*% (excluding the top contributor) into a
+    single 'Minor residual components' bucket with a ``details`` list for tooltip display.
     """
     if not entries:
         return entries
@@ -151,24 +154,16 @@ def _group_small_countries(
     small = [e for e in rest if float(e.get(percent_key, 0)) < threshold]
     if not small:
         return entries
-    buckets: dict[str, float] = {}
-    euro_subs: list[str] = []  # ordered, deduped sub-regions for European bucket
-    for e in small:
-        fam = _geo_family(str(e.get(region_key, "")))
-        buckets[fam] = buckets.get(fam, 0.0) + float(e.get(percent_key, 0))
-        if fam == "European":
-            sub = _euro_subregion(str(e.get(region_key, "")))
-            if sub not in euro_subs:
-                euro_subs.append(sub)
-    other_entries: list[dict] = []
-    for fam, pct in sorted(buckets.items(), key=lambda x: -x[1]):
-        if fam == "European" and euro_subs:
-            hint = "/".join(euro_subs[:2])
-            lbl = f"Other European ({hint})"
-        else:
-            lbl = f"Other {fam}"
-        other_entries.append({region_key: lbl, percent_key: round(pct, 2)})
-    return [top] + main + other_entries
+    total_small = round(sum(float(e.get(percent_key, 0)) for e in small), 2)
+    minor_entry = {
+        region_key: "Minor residual components",
+        percent_key: total_small,
+        "details": [
+            {region_key: str(e.get(region_key, "")), percent_key: float(e.get(percent_key, 0))}
+            for e in small
+        ],
+    }
+    return [top] + main + [minor_entry]
 
 
 # ---------------------------------------------------------------------------
@@ -268,9 +263,10 @@ def _svg_donut(
 
     for i, item in enumerate(items):
         label = str(item[label_key])
+        color_key = str(item.get("_color_key", label))
         orig_pct = float(item[pct_key])
         norm_pct = orig_pct / total * 100
-        color = _geo_color(label, colors, i)
+        color = _geo_color(color_key, colors, i)
 
         arc_deg = norm_pct / 100 * 360 - gap_deg
         arc_deg = max(arc_deg, 0.5)
@@ -347,11 +343,20 @@ def _bar_rows(
     rows: list[str] = []
     for i, item in enumerate(items):
         raw_label = str(item[label_key])
+        color_key = str(item.get("_color_key", raw_label))
         # Bold the top contributor; dim entries < 5% (but never the top)
         label_html = f'<strong>{_esc(raw_label)}</strong>' if i == 0 else _esc(raw_label)
+        # Inline breakdown for minor-residual bucket
+        details = item.get("details")
+        if details:
+            detail_str = "\u2002·\u2002".join(
+                f'{_esc(str(d.get(label_key, d.get("region", ""))))}\u202f{float(d.get(pct_key, d.get("percent", 0))):.1f}%'
+                for d in details
+            )
+            label_html += f'<br><span class="bar-detail">{detail_str}</span>'
         pct = float(item[pct_key])
         bar_w = pct / max_pct * 100
-        color = _geo_color(raw_label, colors, i)
+        color = _geo_color(color_key, colors, i)
         dim = ' style="opacity:0.68"' if (pct < 5.0 and i > 0) else ""
         rows.append(
             f'<div class="bar-row"{dim}>'
@@ -369,7 +374,7 @@ def _bar_rows(
 # Sample cards — with geographic region + period extracted from name
 # ---------------------------------------------------------------------------
 
-def _sample_cards(samples: list[dict]) -> str:
+def _sample_cards(samples: list[dict], t: dict | None = None, lang: str = "en") -> str:
     if not samples:
         return '<p class="no-data">No sample data available.</p>'
 
@@ -389,22 +394,72 @@ def _sample_cards(samples: list[dict]) -> str:
         country, period = _parse_sample_name(raw_name)
         country_label = _display_region(country, raw_name)
         color = _geo_color(country_label, SAMPLE_COLORS, i)
+        country_disp = translate_country(country_label, lang)
+
+        # Enrich with historical metadata
+        enrichment = enrich_sample(raw_name)
+        period_disp = enrichment.get("period") or (translate_period(period, lang) if period else "")
 
         meta_parts: list[str] = []
-        if country_label:
+        if country_disp:
             meta_parts.append(
                 f'<span class="sample-country" style="color:{color}">'
-                f'{_esc(country_label)}</span>'
+                f'{_esc(country_disp)}</span>'
             )
-        if period:
-            meta_parts.append(f'<span class="sample-period">{_esc(period)}</span>')
+        if period_disp:
+            meta_parts.append(f'<span class="sample-period">{_esc(period_disp)}</span>')
         meta_html = (
             f'<div class="sample-meta">{"&ensp;·&ensp;".join(meta_parts)}</div>'
             if meta_parts else ""
         )
 
+        # Build expand button and detail panel if enrichment is available
+        if has_enrichment(enrichment):
+            expand_btn = (
+                f'<button class="sample-expand-btn" aria-expanded="false" aria-label="Show details">'
+                f'<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">'
+                f'<path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+                f'</svg></button>'
+            )
+            sdp_rows: list[str] = []
+            if enrichment.get("date_range"):
+                sdp_rows.append(
+                    f'<div class="sdp-row">'
+                    f'<span class="sdp-label">Period</span>'
+                    f'<span class="sdp-value">{_esc(enrichment.get("period",""))}'
+                    f'<span class="sdp-date">{_esc(enrichment["date_range"])}</span></span>'
+                    f'</div>'
+                )
+            if enrichment.get("area"):
+                sdp_rows.append(
+                    f'<div class="sdp-row">'
+                    f'<span class="sdp-label">Area</span>'
+                    f'<span class="sdp-value">{_esc(enrichment["area"])}</span>'
+                    f'</div>'
+                )
+            if enrichment.get("culture"):
+                sdp_rows.append(
+                    f'<div class="sdp-row">'
+                    f'<span class="sdp-label">Culture</span>'
+                    f'<span class="sdp-value">{_esc(enrichment["culture"])}</span>'
+                    f'</div>'
+                )
+            if enrichment.get("description"):
+                sdp_rows.append(
+                    f'<div class="sdp-desc">{_esc(enrichment["description"])}</div>'
+                )
+            detail_panel = (
+                f'<div class="sample-detail-panel">'
+                f'<div class="sdp-inner">{"".join(sdp_rows)}</div>'
+                f'</div>'
+            )
+        else:
+            expand_btn = ""
+            detail_panel = ""
+
         cards.append(
             f'<div class="sample-card">'
+            f'<div class="sample-card-main">'
             f'<div class="sample-rank" style="background:{color}">{i + 1}</div>'
             f'<div class="sample-body">'
             f'<div class="sample-name">{_esc(raw_name)}</div>'
@@ -413,25 +468,34 @@ def _sample_cards(samples: list[dict]) -> str:
             f'<div class="sample-mini-fill" data-w="{bar_w:.1f}%"'
             f' style="background:{color};width:0"></div>'
             f'</div></div>'
+            f'<div class="sample-card-end">'
             f'<div class="sample-pct">{pct:.1f}%</div>'
+            f'{expand_btn}'
+            f'</div>'
+            f'</div>'
+            f'{detail_panel}'
             f'</div>'
         )
-    note = (
-        '<p class="sample-note">'
-        'Ancient samples serve as genetic <em>proxies</em> — '
-        'they are reference populations, not direct ancestors.'
-        '</p>'
+    _t = t or {}
+    proxy_note_text = _t.get(
+        "sample_proxy_note",
+        'Ancient samples serve as genetic <em>proxies</em> — they are reference populations, not direct ancestors.'
     )
+    note = f'<p class="sample-note">{proxy_note_text}</p>'
     minor_note = ""
     if minor_samples:
         minor_pct = sum(float(s["percent"]) for s in minor_samples)
         n = len(minor_samples)
-        minor_note = (
-            f'<p class="sample-note" style="margin-top:0.4rem">'
-            f'{n} additional sample{"s" if n > 1 else ""} contribute '
-            f'{minor_pct:.1f}% combined (each &lt;1%).'
-            f'</p>'
+        minor_note_text = _t.get(
+            "sample_minor_note",
+            f'{n} additional sample{"s" if n > 1 else ""} contribute {minor_pct:.1f}% combined (each &lt;1%).'
         )
+        # Fill in numeric placeholders ({n}, {pct}, {s} for plural)
+        if "{n}" in minor_note_text or "{pct}" in minor_note_text:
+            minor_note_text = minor_note_text.format(
+                n=n, pct=f"{minor_pct:.1f}", s="s" if n > 1 else ""
+            )
+        minor_note = f'<p class="sample-note" style="margin-top:0.4rem">{minor_note_text}</p>'
     return note + '<div class="sample-list">' + "".join(cards) + "</div>" + minor_note
 
 
@@ -485,14 +549,18 @@ def _extract_periods(
 def _period_signal_card(
     period_data: dict | list | None,
     best_period: str | None = None,
+    t: dict | None = None,
+    lang: str = "en",
 ) -> str:
     """Compact 'Historical Period Signal' card. Returns '' when no data."""
+    _t = t or {}
     periods, best_period = _extract_periods(period_data, best_period)
     if not best_period:
         return ""
 
-    best_label = _fmt_period(str(best_period))
-    date_range = _PERIOD_RANGES.get(best_label.lower(), "")
+    best_label_en = _fmt_period(str(best_period))
+    best_label = translate_period(best_label_en, lang)
+    date_range = _PERIOD_RANGES.get(best_label_en.lower(), "")
     years_html = (
         f'<span class="period-signal-years">{_esc(date_range)}</span>'
         if date_range else ""
@@ -501,15 +569,14 @@ def _period_signal_card(
         f'<div class="period-signal-card">'
         f'<div class="period-signal-header">'
         f'<span class="period-signal-icon">&#9719;</span>'
-        f'<span class="period-signal-title">Historical Period Signal</span>'
+        f'<span class="period-signal-title">{_esc(_t.get("period_signal_title", "Historical Period Signal"))}</span>'
         f'</div>'
         f'<div class="period-signal-main">'
         f'<span class="period-signal-value">{_esc(best_label)}</span>'
         f'{years_html}'
         f'</div>'
         f'<p class="period-signal-note">'
-        f'This is the closest single-period approximation. '
-        f'The overall mixed-period model remains the primary result.'
+        f'{_esc(_t.get("period_signal_note", "This is the closest single-period approximation. The overall mixed-period model remains the primary result."))}'
         f'</p>'
         f'</div>'
     )
@@ -518,12 +585,15 @@ def _period_signal_card(
 def _period_detail_block(
     period_data: dict | list | None,
     best_period: str | None = None,
+    t: dict | None = None,
+    lang: str = "en",
 ) -> str:
     """Full period bar chart + table for the Technical Appendix."""
+    _t = t or {}
     periods, best_period = _extract_periods(period_data, best_period)
 
     if not periods:
-        return '<div class="no-data">Period diagnostics were not generated for this run.</div>'
+        return f'<div class="no-data">{_esc(_t.get("no_period_data", "Period diagnostics were not generated for this run."))}</div>'
 
     html_parts: list[str] = []
 
@@ -531,8 +601,8 @@ def _period_detail_block(
     if best_period:
         html_parts.append(
             f'<div class="period-best-callout">'
-            f'<span class="period-best-label">Best Period Fit</span>'
-            f'<span class="period-best-value">{_esc(_fmt_period(str(best_period)))}</span>'
+            f'<span class="period-best-label">{_esc(_t.get("best_period_fit", "Best Period Fit"))}</span>'
+            f'<span class="period-best-value">{_esc(translate_period(_fmt_period(str(best_period)), lang))}</span>'
             f'</div>'
         )
 
@@ -544,7 +614,7 @@ def _period_detail_block(
     # Bar chart (inverted — lower distance = longer bar)
     rows: list[str] = []
     for i, (p, dist) in enumerate(zip(periods, dists)):
-        label = _fmt_period(str(p.get("period") or p.get("name", f"Period {i + 1}")))
+        label = translate_period(_fmt_period(str(p.get("period") or p.get("name", f"Period {i + 1}"))), lang)
         spread = max_d - min_d if max_d > min_d else max_d
         inv_w = ((max_d - dist) / spread * 100) if spread > 0 else 50
         color = PERIOD_COLORS[i % len(PERIOD_COLORS)]
@@ -560,15 +630,14 @@ def _period_detail_block(
             f'</div>'
         )
     note = (
-        '<p class="period-note">Longer bar = closer genetic fit (lower distance).'
-        ' ★ = best-matching period.</p>'
+        f'<p class="period-note">{_esc(_t.get("period_longer_bar", "Longer bar = closer genetic fit (lower distance). \u2605 = best-matching period."))}</p>'
     )
     html_parts.append(note + '<div class="bar-list">' + "".join(rows) + "</div>")
 
     # Period reference table
     table_rows: list[str] = []
     for i, (p, dist) in enumerate(zip(periods, dists)):
-        label = _fmt_period(str(p.get("period") or p.get("name", f"Period {i + 1}")))
+        label = translate_period(_fmt_period(str(p.get("period") or p.get("name", f"Period {i + 1}"))), lang)
         date_range = _PERIOD_RANGES.get(label.lower(), "—")
         best_cls = ' class="ptbl-best"' if i == best_idx else ""
         table_rows.append(
@@ -581,7 +650,9 @@ def _period_detail_block(
     html_parts.append(
         f'<table class="period-table">'
         f'<thead><tr>'
-        f'<th>Period</th><th>Approx. Years</th><th>Distance</th>'
+        f'<th>{_esc(_t.get("period_col", "Period"))}</th>'
+        f'<th>{_esc(_t.get("approx_years", "Approx. Years"))}</th>'
+        f'<th>{_esc(_t.get("distance_col", "Distance"))}</th>'
         f'</tr></thead>'
         f'<tbody>{"".join(table_rows)}</tbody>'
         f'</table>'
@@ -598,15 +669,18 @@ def _key_signal_card(
     by_macro: list[dict],
     by_country: list[dict],
     best_period: str | None,
+    t: dict | None = None,
+    lang: str = "en",
 ) -> str:
     """Compact 'Key Genetic Signal' summary card for section C header."""
+    _t = t or {}
     items: list[str] = []
 
     if by_macro and len(by_macro) >= 1:
         m = by_macro[0]
         items.append(
             f'<div class="ks-item">'
-            f'<span class="ks-label">Primary signal</span>'
+            f'<span class="ks-label">{_esc(_t.get("primary_signal", "Primary signal"))}</span>'
             f'<span class="ks-value">{_esc(str(m.get("macro_region", "")))}'
             f'<span class="ks-pct">{float(m.get("percent", 0)):.1f}%</span></span>'
             f'</div>'
@@ -615,7 +689,7 @@ def _key_signal_card(
         m = by_macro[1]
         items.append(
             f'<div class="ks-item">'
-            f'<span class="ks-label">Secondary signal</span>'
+            f'<span class="ks-label">{_esc(_t.get("secondary_signal", "Secondary signal"))}</span>'
             f'<span class="ks-value">{_esc(str(m.get("macro_region", "")))}'
             f'<span class="ks-pct">{float(m.get("percent", 0)):.1f}%</span></span>'
             f'</div>'
@@ -624,21 +698,21 @@ def _key_signal_card(
         c = by_country[0]
         items.append(
             f'<div class="ks-item">'
-            f'<span class="ks-label">Strongest country proxy</span>'
+            f'<span class="ks-label">{_esc(_t.get("strongest_country", "Strongest country proxy"))}</span>'
             f'<span class="ks-value">{_esc(str(c.get("region", "")))}'
             f'<span class="ks-pct">{float(c.get("percent", 0)):.1f}%</span></span>'
             f'</div>'
         )
     if best_period:
-        period_label = _fmt_period(str(best_period))
-        date_range = _PERIOD_RANGES.get(period_label.lower(), "")
+        period_label = translate_period(_fmt_period(str(best_period)), lang)
+        date_range = _PERIOD_RANGES.get(_fmt_period(str(best_period)).lower(), "")
         years_span = (
             f'<span class="ks-years">{_esc(date_range)}</span>'
             if date_range else ""
         )
         items.append(
             f'<div class="ks-item">'
-            f'<span class="ks-label">Closest period fit</span>'
+            f'<span class="ks-label">{_esc(_t.get("closest_period", "Closest period fit"))}</span>'
             f'<span class="ks-value">{_esc(period_label)}{years_span}</span>'
             f'</div>'
         )
@@ -648,7 +722,7 @@ def _key_signal_card(
 
     return (
         f'<div class="key-signal-card">'
-        f'<div class="ks-title">Key Genetic Signal</div>'
+        f'<div class="ks-title">{_esc(_t.get("key_signal_title", "Key Genetic Signal"))}</div>'
         f'<div class="ks-grid">{"".join(items)}</div>'
         f'</div>'
     )
@@ -687,18 +761,24 @@ def _find_interpretation_split_pos(html: str) -> int | None:
     return start if count == 2 else None
 
 
-def _format_interpretation(text: str | None) -> str:
+def _format_interpretation(text: str | None, t: dict | None = None) -> str:
+    _t = t or {}
+    # make the read_more label available via module-level for the button string
+    global _interp_read_more
+    _interp_read_more = _t.get("read_more", "Read full interpretation")
     if not text or not text.strip():
+        placeholder_msg  = _t.get("interp_placeholder", "Historical interpretation has not yet been added.")
+        placeholder_path = _t.get("interp_placeholder_path", "interpretation/interpretation.txt")
         return (
             '<div class="interp-placeholder">'
             '<div class="placeholder-icon">&#128214;</div>'
-            "<p>Historical interpretation has not yet been added.</p>"
-            "<p>Add your narrative to <code>interpretation/interpretation.txt</code>"
-            " to populate this section.</p>"
+            f"<p>{_esc(placeholder_msg)}</p>"
+            f"<p><code>{_esc(placeholder_path)}</code></p>"
             "</div>"
         )
 
-    lines = text.splitlines()
+    # Strip metadata tags (e.g. "run_id: ...") before rendering
+    lines = [l for l in text.splitlines() if not l.startswith("run_id:")]
     html: list[str] = []
     in_para = False
     in_list = False
@@ -779,7 +859,7 @@ def _format_interpretation(text: str | None) -> str:
                 f'<div class="interpretation-preview">{preview_html}</div>'
                 f'<div class="interpretation-hidden">{hidden_html}</div>'
                 '<button class="interpretation-toggle" aria-expanded="false">'
-                '<span class="toggle-text">Read full interpretation</span>'
+                f'<span class="toggle-text">{_interp_read_more}</span>'
                 '<span class="toggle-icon">&#9662;</span>'
                 "</button>"
                 "</div>"
@@ -791,17 +871,19 @@ def _format_interpretation(text: str | None) -> str:
 # Distance badge
 # ---------------------------------------------------------------------------
 
-def _dist_badge(dist: float, quality: str) -> str:
+def _dist_badge(dist: float, quality: str, t: dict | None = None) -> str:
+    _t = t or {}
     if dist < 0.03:
         cls = "dist-good"
     elif dist < 0.06:
         cls = "dist-fair"
     else:
         cls = "dist-poor"
+    dist_label = _t.get("distance", "Distance")
     return (
         f'<span class="dist-badge {cls}">'
         f'<span class="dist-dot"></span>'
-        f"Distance&nbsp;{dist:.6f}&nbsp;&nbsp;·&nbsp;&nbsp;{_esc(quality)}"
+        f"{_esc(dist_label)}&nbsp;{dist:.6f}&nbsp;&nbsp;·&nbsp;&nbsp;{_esc(quality)}"
         f"</span>"
     )
 
@@ -810,18 +892,46 @@ def _dist_badge(dist: float, quality: str) -> str:
 # Executive summary
 # ---------------------------------------------------------------------------
 
-def _executive_summary(fr: dict, generic: dict | None) -> str:
+def _executive_summary(fr: dict, generic: dict | None, t: dict | None = None, lang: str = "en") -> str:
+    _t = t or {}
     run = fr.get("run", {})
     dist = float(run.get("best_distance", 0))
     quality = str(run.get("distance_quality", ""))
-    by_macro = fr.get("by_macro_region", [])
-    by_country = fr.get("by_country", [])
+    by_macro = [
+        {**m, "macro_region": translate_macro(m["macro_region"], lang)}
+        for m in fr.get("by_macro_region", [])
+    ]
+    by_country = [
+        {**c, "region": translate_country(_display_region(c["region"]), lang)}
+        for c in fr.get("by_country", [])
+    ]
 
     # Always derive the summary from the current run's data.
     # generic_summary.json can be stale (from a previous run) so it is intentionally
     # ignored here.
 
-    parts: list[str] = []
+    # Hebrew summary — same data, Hebrew sentence structure
+    if _t.get("distance") == "\u05de\u05e8\u05d7\u05e7":  # "מרחק" signals Hebrew
+        parts: list[str] = []
+        if by_macro and len(by_macro) >= 2:
+            m0, m1 = by_macro[0], by_macro[1]
+            parts.append(
+                f"\u05d4\u05de\u05d5\u05d3\u05dc \u05d4\u05d2\u05e0\u05d8\u05d9 \u05de\u05d6\u05d4\u05d4 "
+                f"{m0['percent']:.0f}% {m0['macro_region']} "
+                f"\u05d5\u05e2\u05d5\u05d3 {m1['percent']:.0f}% {m1['macro_region']}."
+            )
+        if by_country:
+            regions = "\u202a, \u202c".join(
+                f"{_display_region(c['region'])} ({c['percent']:.0f}%)"
+                for c in by_country[:3]
+            )
+            parts.append(f"\u05d6\u05d9\u05e7\u05d4 \u05d7\u05d6\u05e7\u05d4 \u05d1\u05d9\u05d5\u05ea\u05e8 \u05dc: {regions}.")
+        if quality:
+            parts.append(f"\u05de\u05e8\u05d7\u05e7 \u05d2\u05e0\u05d8\u05d9 {dist:.6f} \u2014 {quality}.")
+        return " ".join(parts)
+
+    # English summary
+    parts = []
     if by_macro and len(by_macro) >= 2:
         m0, m1 = by_macro[0], by_macro[1]
         parts.append(
@@ -850,8 +960,14 @@ def render_report(
     generic_summary: dict | None,
     period_data: dict | list | None,
     interpretation: str | None,
-    theme: str = "dark",
+    theme: str = "light",
+    ydna_interpretation: str | None = None,
+    lang: str = "en",
 ) -> str:
+    # ── Translations ─────────────────────────────────────────────
+    t = get_t(lang)
+    is_rtl = (lang == "he")
+
     # ── User info ────────────────────────────────────────────────
     display_name = _esc(profile.get("display_name", "User"))
     identity     = _esc(profile.get("identity_context") or "")
@@ -860,7 +976,7 @@ def render_report(
     # ── Run info ─────────────────────────────────────────────────
     run       = final_report.get("run", {})
     dist      = float(run.get("best_distance", 0))
-    quality   = str(run.get("distance_quality", ""))
+    quality   = translate_quality(str(run.get("distance_quality", "")), lang)
     prof_name = _esc(run.get("profile") or "")
     run_id    = _esc(str(run.get("run_id", "")))
     stop_rsn  = _esc(str(run.get("stop_reason", "")))
@@ -893,7 +1009,7 @@ def render_report(
         chips.append(f'<span class="chip chip-ydna">&#9852;&nbsp;Y&#8209;DNA&nbsp;{ydna}</span>')
     chips.append(f'<span class="chip chip-profile">{prof_name}</span>')
     if best_period:
-        chips.append(f'<span class="chip chip-period">&#8982;&nbsp;{_esc(str(best_period))}</span>')
+        chips.append(f'<span class="chip chip-period">&#8982;&nbsp;{_esc(translate_period(_fmt_period(str(best_period)), lang))}</span>')
 
     # ── Charts ───────────────────────────────────────────────────
     # Apply display-layer label remapping, then collapse <1% entries.
@@ -902,71 +1018,84 @@ def render_report(
         {**c, "region": _display_region(c["region"])} for c in by_country
     ]
     by_country_display = _group_small_countries(by_country_disp)
+    # Translate region labels for display; keep original English in _color_key for geo-color lookup
+    by_country_display_t = [
+        {**e, "_color_key": e["region"], "region": translate_country(e["region"], lang)}
+        for e in by_country_display
+    ]
     country_donut = _svg_donut(
-        by_country_display, "region", "percent", COUNTRY_COLORS,
+        by_country_display_t, "region", "percent", COUNTRY_COLORS,
         size=200, chart_id="country-donut",
-        center_label="Ancestry\nDistribution",
+        center_label=f"{t.get('col_distribution','Ancestry')}\n{t.get('col_distribution','Distribution')}",
     )
-    country_bars = _bar_rows(by_country_display, "region", "percent", COUNTRY_COLORS)
+    country_bars = _bar_rows(by_country_display_t, "region", "percent", COUNTRY_COLORS)
+
+    # Translate macro-region labels for display; keep original English in _color_key
+    by_macro_disp = [
+        {**m, "_color_key": m["macro_region"], "macro_region": translate_macro(m["macro_region"], lang)}
+        for m in by_macro
+    ]
 
     macro_donut = ""
-    if by_macro:
+    if by_macro_disp:
         macro_donut = _svg_donut(
-            by_macro, "macro_region", "percent", MACRO_COLORS,
+            by_macro_disp, "macro_region", "percent", MACRO_COLORS,
             size=160, chart_id="macro-donut",
-            center_label="Macro\nRegion",
+            center_label=t.get("col_macro", "Macro\nRegion"),
         )
 
     # ── Hero takeaway line ────────────────────────────────────────
-    if by_macro and len(by_macro) >= 2:
-        _m0 = str(by_macro[0].get("macro_region", ""))
-        _m1 = str(by_macro[1].get("macro_region", ""))
+    if by_macro_disp and len(by_macro_disp) >= 2:
+        _m0 = str(by_macro_disp[0].get("macro_region", ""))
+        _m1 = str(by_macro_disp[1].get("macro_region", ""))
         hero_takeaway_html = (
-            f'<p class="hero-takeaway">Closest overall fit:&ensp;'
+            f'<p class="hero-takeaway">{_esc(t.get("closest_fit","Closest overall fit"))}&ensp;'
             f'{_esc(_m0)}&thinsp;+&thinsp;{_esc(_m1)}</p>'
         )
     elif by_country_disp:
         _c0 = by_country_disp[0]
         hero_takeaway_html = (
-            f'<p class="hero-takeaway">Dominant affinity:&ensp;'
+            f'<p class="hero-takeaway">{_esc(t.get("dominant_affinity","Dominant affinity"))}&ensp;'
             f'{_esc(str(_c0.get("region", "")))} '
             f'({float(_c0.get("percent", 0)):.1f}%)</p>'
         )
     else:
         hero_takeaway_html = ""
 
-    sample_html        = _sample_cards(top_samples)
-    key_signal_html    = _key_signal_card(by_macro, by_country, best_period)
-    period_signal_html = _period_signal_card(period_data, best_period)
+    sample_html        = _sample_cards(top_samples, t=t, lang=lang)
+    key_signal_html    = _key_signal_card(by_macro_disp, by_country_display_t, best_period, t=t, lang=lang)
+    period_signal_html = _period_signal_card(period_data, best_period, t=t, lang=lang)
     # Period card appears BEFORE interpretation narrative; divider always separates it
     period_signal_prefix = (
         '<div class="sub-divider"></div>' + period_signal_html
         if period_signal_html else ""
     )
-    period_detail_html = _period_detail_block(period_data, best_period)
-    interp_html        = _format_interpretation(interpretation)
-    dist_badge   = _dist_badge(dist, quality)
-    exec_summary = _executive_summary(final_report, generic_summary)
+    period_detail_html = _period_detail_block(period_data, best_period, t=t, lang=lang)
+    interp_html        = _format_interpretation(interpretation, t=t)
+    ydna_html          = _format_interpretation(ydna_interpretation, t=t) if ydna_interpretation else None
+    dist_badge   = _dist_badge(dist, quality, t=t)
+    exec_summary = _executive_summary(final_report, generic_summary, t=t, lang=lang)
 
     # ── Hero metric row ──────────────────────────────────────────
     _hero_metric_items: list[str] = []
-    if by_country_disp:
-        _tc = by_country_disp[0]
+    if by_country_display_t:
+        _tc = by_country_display_t[0]
         _tc_name = str(_tc.get("region", ""))
         _tc_pct  = float(_tc.get("percent", 0))
         _hero_metric_items.append(
             f'<div class="hero-metric">'
-            f'<div class="hm-label">Strongest country proxy</div>'
+            f'<div class="hm-label">{_esc(t.get("strongest_country_metric","Strongest country proxy"))}</div>'
             f'<div class="hm-value">{_esc(_tc_name)}'
             f'&ensp;<span class="hm-pct">{_tc_pct:.1f}%</span></div>'
             f'</div>'
         )
     if best_period:
-        _bp_label = _fmt_period(str(best_period))
-        _bp_range = _PERIOD_RANGES.get(_bp_label.lower(), "")
+        _bp_label_en = _fmt_period(str(best_period))
+        _bp_label = translate_period(_bp_label_en, lang)
+        _bp_range = _PERIOD_RANGES.get(_bp_label_en.lower(), "")
         _hero_metric_items.append(
             f'<div class="hero-metric">'
-            f'<div class="hm-label">Closest historical period</div>'
+            f'<div class="hm-label">{_esc(t.get("closest_period_metric","Closest historical period"))}</div>'
             f'<div class="hm-value">{_esc(_bp_label)}'
             + (f'&ensp;<span class="hm-pct">{_esc(_bp_range)}</span>' if _bp_range else "")
             + f'</div></div>'
@@ -974,7 +1103,7 @@ def render_report(
     if quality:
         _hero_metric_items.append(
             f'<div class="hero-metric">'
-            f'<div class="hm-label">Fit quality</div>'
+            f'<div class="hm-label">{_esc(t.get("fit_quality","Fit quality"))}</div>'
             f'<div class="hm-value">{_esc(quality)}</div>'
             f'</div>'
         )
@@ -985,32 +1114,32 @@ def render_report(
 
     # ── Technical meta grid ──────────────────────────────────────
     meta_items: list[str] = [
-        f'<div class="meta-item"><span class="meta-label">Run ID</span>'
+        f'<div class="meta-item"><span class="meta-label">{t.get("meta_run_id","Run ID")}</span>'
         f'<span class="meta-value mono">{run_id}</span></div>',
-        f'<div class="meta-item"><span class="meta-label">Profile</span>'
+        f'<div class="meta-item"><span class="meta-label">{t.get("meta_profile","Profile")}</span>'
         f'<span class="meta-value">{prof_name}</span></div>',
-        f'<div class="meta-item"><span class="meta-label">Best Distance</span>'
+        f'<div class="meta-item"><span class="meta-label">{t.get("meta_best_distance","Best Distance")}</span>'
         f'<span class="meta-value mono">{dist:.6f}</span></div>',
-        f'<div class="meta-item"><span class="meta-label">Fit Quality</span>'
+        f'<div class="meta-item"><span class="meta-label">{t.get("meta_fit_quality","Fit Quality")}</span>'
         f'<span class="meta-value">{_esc(quality)}</span></div>',
     ]
     if best_iter is not None:
         meta_items.append(
-            f'<div class="meta-item"><span class="meta-label">Best Iteration</span>'
+            f'<div class="meta-item"><span class="meta-label">{t.get("meta_best_iter","Best Iteration")}</span>'
             f'<span class="meta-value">{best_iter}</span></div>'
         )
     meta_items.append(
-        f'<div class="meta-item"><span class="meta-label">Stop Reason</span>'
+        f'<div class="meta-item"><span class="meta-label">{t.get("meta_stop_reason","Stop Reason")}</span>'
         f'<span class="meta-value" style="font-size:0.78rem">{stop_rsn}</span></div>'
     )
     if identity:
         meta_items.append(
-            f'<div class="meta-item"><span class="meta-label">Identity Context</span>'
+            f'<div class="meta-item"><span class="meta-label">{t.get("meta_identity","Identity Context")}</span>'
             f'<span class="meta-value">{identity}</span></div>'
         )
     if ydna:
         meta_items.append(
-            f'<div class="meta-item"><span class="meta-label">Y-DNA Haplogroup</span>'
+            f'<div class="meta-item"><span class="meta-label">{t.get("meta_ydna","Y-DNA Haplogroup")}</span>'
             f'<span class="meta-value mono">{ydna}</span></div>'
         )
 
@@ -1021,7 +1150,7 @@ def render_report(
       <div class="sub-divider"></div>
       <div style="display:flex;justify-content:center">
         <div>
-          <div class="col-label" style="text-align:center">Macro Region</div>
+          <div class="col-label" style="text-align:center">{t.get("col_macro","Macro Region")}</div>
           {macro_donut}
         </div>
       </div>"""
@@ -1037,11 +1166,12 @@ def render_report(
         )
 
     _toc_entries = [
-        _toc_link("overview",       "A", "Overview",       active=True),
-        _toc_link("ancestry",       "B", "Ancestry"),
-        _toc_link("interpretation", "C", "Interpretation"),
-        _toc_link("samples",        "D", "Samples"),
-        _toc_link("technical",      "E", "Technical"),
+        _toc_link("overview",       "A", t.get("toc_overview",  "Overview"),       active=True),
+        _toc_link("ancestry",       "B", t.get("toc_ancestry",  "Ancestry")),
+        _toc_link("interpretation", "C", t.get("toc_interp",    "Ancestry Interp.")),
+        _toc_link("samples",        "D", t.get("toc_samples",   "Samples")),
+        *([_toc_link("ydna",        "F", t.get("toc_ydna",      "Y-DNA Interp."))] if ydna_html else []),
+        _toc_link("technical",      "E", t.get("toc_technical", "Technical")),
     ]
     toc_links = "\n        ".join(_toc_entries)
 
@@ -1059,12 +1189,14 @@ def render_report(
         f'</div>'
     )
 
+    _dir_attr = ' dir="rtl"' if is_rtl else ""
     return f"""<!DOCTYPE html>
-<html lang="en" data-theme="{theme}">
+<html lang="{lang}"{_dir_attr} data-theme="{theme}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Genetic Report &mdash; {display_name}</title>
+<title>{t.get("report_title","Genetic Report")} &mdash; {display_name}</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧬</text></svg>">
 <style>{css}</style>
 </head>
 <body>
@@ -1073,7 +1205,7 @@ def render_report(
 
 <!-- Mobile nav -->
 <nav class="mobile-nav">
-  <button class="mob-toc-btn" id="mob-toc-btn">Contents</button>
+  <button class="mob-toc-btn" id="mob-toc-btn">{t.get("contents","Contents")}</button>
   <span class="mobile-title">{display_name}</span>
   <button class="theme-toggle-btn" aria-label="Toggle theme" title="Toggle dark / light">
     <span class="icon-sun">&#9728;</span><span class="icon-moon">&#9790;</span>
@@ -1081,11 +1213,12 @@ def render_report(
 </nav>
 <div class="mobile-toc-menu" id="mobile-toc-menu">
   <nav class="toc">
-    {_toc_link("overview","A","Overview",True)}
-    {_toc_link("ancestry","B","Ancestry")}
-    {_toc_link("interpretation","C","Interpretation")}
-    {_toc_link("samples","D","Samples")}
-    {_toc_link("technical","E","Technical")}
+    {_toc_link("overview","A",t.get("toc_overview","Overview"),True)}
+    {_toc_link("ancestry","B",t.get("toc_ancestry","Ancestry"))}
+    {_toc_link("interpretation","C",t.get("toc_interp","Ancestry Interp."))}
+    {_toc_link("samples","D",t.get("toc_samples","Samples"))}
+    {_toc_link("ydna","F",t.get("toc_ydna","Y-DNA Interp.")) if ydna_html else ""}
+    {_toc_link("technical","E",t.get("toc_technical","Technical"))}
   </nav>
 </div>
 
@@ -1096,7 +1229,7 @@ def render_report(
     <div class="sidebar-inner">
       <div class="sidebar-top-row">
         <div>
-          <div class="sidebar-monogram">Ancestry Report</div>
+          <div class="sidebar-monogram">{t.get("ancestry_report","Ancestry Report")}</div>
           <div class="sidebar-brand">{display_name}</div>
         </div>
         <button class="theme-toggle-btn" aria-label="Toggle theme" title="Toggle dark / light">
@@ -1119,7 +1252,7 @@ def render_report(
     <!-- ══ A. Hero ══════════════════════════════════════════════ -->
     <section id="overview" class="section hero-section">
       <div class="section-body">
-        <div class="hero-eyebrow">Genetic Ancestry Report</div>
+        <div class="hero-eyebrow">{t.get("report_title","Genetic Ancestry Report")}</div>
         <h1 class="hero-name">{display_name}</h1>
         <div class="hero-ornament"><span>✦ ✦ ✦</span></div>
         <div class="hero-chips">{"".join(chips)}</div>
@@ -1136,9 +1269,9 @@ def render_report(
         <div class="section-header-left">
           <div class="section-icon icon-blue">&#9670;</div>
           <div>
-            <div class="section-eyebrow">Model-Level Summary</div>
-            <div class="section-title">Ancestry Distribution</div>
-            <div class="section-sub">by_country is the primary evidence &mdash; ancient populations as genetic proxies</div>
+            <div class="section-eyebrow">{t.get("sec_b_eyebrow","Model-Level Summary")}</div>
+            <div class="section-title">{t.get("sec_b_title","Ancestry Distribution")}</div>
+            <div class="section-sub">{t.get("sec_b_sub","by_country is the primary evidence &mdash; ancient populations as genetic proxies")}</div>
           </div>
         </div>
         <div class="section-badge">B</div>
@@ -1147,15 +1280,16 @@ def render_report(
       <div class="section-body">
         <div class="ancestry-layout">
           <div class="ancestry-donut">
-            <div class="col-label">Distribution</div>
+            <div class="col-label">{t.get("col_distribution","Distribution")}</div>
             {country_donut}
           </div>
           <div class="ancestry-bars">
-            <div class="col-label">Ranked Breakdown</div>
+            <div class="col-label">{t.get("col_ranked","Ranked Breakdown")}</div>
             {country_bars}
           </div>
         </div>
         {macro_section_html}
+        <p class="section-note">{t.get("sec_b_note","The distribution is centered on Eastern Mediterranean and Southern European populations, with secondary variation reflecting regional admixture.")}</p>
       </div>
     </section>
 
@@ -1165,11 +1299,12 @@ def render_report(
         <div class="section-header-left">
           <div class="section-icon icon-gold">&#128214;</div>
           <div>
-            <div class="section-title">Historical Interpretation</div>
-            <div class="section-sub">Narrative from interpretation.txt &mdash; ancient populations are genetic proxies only</div>
+            <div class="section-title">{t.get("sec_c_title","Ancestry Interpretation")}</div>
+            <div class="section-sub">{t.get("sec_c_sub","Bronze Age &rarr; Roman &amp; Byzantine &rarr; Medieval &mdash; ancient populations are genetic proxies only")}</div>
           </div>
         </div>
         <div class="section-badge">C</div>
+        <div class="collapse-hint">{t.get("collapse_hint","Summary shown &mdash; expand for full historical interpretation")}</div>
         <button class="collapsible-toggle" aria-expanded="true"></button>
       </div>
       <div class="section-body">
@@ -1186,18 +1321,38 @@ def render_report(
         <div class="section-header-left">
           <div class="section-icon icon-teal">&#9652;</div>
           <div>
-            <div class="section-eyebrow">Raw Genetic Proxies</div>
-            <div class="section-title">Sample-Level Proxies</div>
-            <div class="section-sub">Top contributing reference populations &mdash; supporting detail below ancestry distribution</div>
+            <div class="section-eyebrow">{t.get("sec_d_eyebrow","Raw Genetic Proxies")}</div>
+            <div class="section-title">{t.get("sec_d_title","Sample-Level Proxies")}</div>
+            <div class="section-sub">{t.get("sec_d_sub","Top contributing reference populations &mdash; supporting detail below ancestry distribution")}</div>
           </div>
         </div>
         <div class="section-badge">D</div>
         <button class="collapsible-toggle" aria-expanded="true"></button>
       </div>
       <div class="section-body">
+        <p class="section-note">{t.get("sec_d_note","These samples represent closest-fit ancient and historical proxies and should be interpreted as population approximations rather than direct ancestry.")}</p>
         {sample_html}
       </div>
     </section>
+
+    <!-- ══ F. Y-DNA (Paternal Line) ═════════════════════════════ -->
+    {"" if not ydna_html else f"""
+    <section id="ydna" class="section collapsible-section section-divider-top">
+      <div class="section-header">
+        <div class="section-header-left">
+          <div class="section-icon icon-gold">&#129516;</div>
+          <div>
+            <div class="section-title">{t.get("sec_f_title","Y&#8209;DNA Interpretation")}</div>
+            <div class="section-sub">{t.get("sec_f_sub","Paternal lineage analysis &mdash; single line only, does not represent full ancestry")}</div>
+          </div>
+        </div>
+        <div class="section-badge">F</div>
+        <button class="collapsible-toggle" aria-expanded="true"></button>
+      </div>
+      <div class="section-body">
+        {ydna_html}
+      </div>
+    </section>"""}
 
     <!-- ══ E. Technical Appendix ════════════════════════════════ -->
     <section id="technical" class="section collapsible-section collapsed">
@@ -1205,8 +1360,8 @@ def render_report(
         <div class="section-header-left">
           <div class="section-icon icon-gray">&#9881;</div>
           <div>
-            <div class="section-title">Technical Appendix</div>
-            <div class="section-sub">Run metadata and artifact references</div>
+            <div class="section-title">{t.get("sec_e_title","Technical Appendix")}</div>
+            <div class="section-sub">{t.get("sec_e_sub","Run metadata and artifact references")}</div>
           </div>
         </div>
         <div class="section-badge">E</div>
@@ -1215,7 +1370,7 @@ def render_report(
       <div class="section-body">
         <div class="meta-grid">{"".join(meta_items)}</div>
         <details class="appendix-details">
-          <summary class="appendix-summary">Period Diagnostics</summary>
+          <summary class="appendix-summary">{t.get("period_diagnostics","Period Diagnostics")}</summary>
           <div class="appendix-details-body">
             {period_detail_html}
           </div>
@@ -1224,9 +1379,8 @@ def render_report(
     </section>
 
     <footer>
-      Generated from run <code>{run_id}</code><br>
-      All ancient reference samples are genetic proxies only.
-      Results do not constitute ethnic or genealogical determinations.
+      {t.get("generated_from","Generated from run")} <code>{run_id}</code><br>
+      {t.get("footer_note","All ancient reference samples are genetic proxies only. Results do not constitute ethnic or genealogical determinations.")}
     </footer>
 
   </main>
